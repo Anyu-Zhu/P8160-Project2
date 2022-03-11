@@ -1,0 +1,47 @@
+---
+title: "logistic model"
+author: "Anyu Zhu"
+date: "3/5/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+## data preprocessing
+
+```{r}
+cancer = read.csv("breast-cancer.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1)
+
+```
+
+
+```{r}
+# 10 var
+y = as.matrix(cancer$diagnosis)
+x1 = as.matrix(cancer[, 3:12])
+
+logisticstuff <- function(x, y , betavec) {
+
+  u <- x %*% betavec
+  expu <- exp(u)
+  # loglikelihood
+  loglik <- t(u) %*% y - sum(log(1 + expu))
+  p <- expu / (1 + expu)
+  # gradient
+  grad <- t(x) %*% (y - p)
+  # hessian
+  Hess <- t(x) %*% diag(as.vector(p * (1-p))) %*% x
+
+  return(list(loglik = loglik, grad = grad, Hess = Hess))
+}
+
+logisticstuff(x1, y, rep(10, 10))
+```
+
+
