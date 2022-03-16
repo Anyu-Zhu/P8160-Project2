@@ -20,6 +20,7 @@ cancer = read.csv("breast-cancer.csv") %>%
 
 ```
 
+## logistic
 
 ```{r}
 # 10 var
@@ -44,4 +45,31 @@ logisticstuff <- function(x, y , betavec) {
 logisticstuff(x1, y, rep(10, 10))
 ```
 
+## Newton Raphson
+
+```{r}
+NewtonRaphson <- function(x, y, func, start, tol=1e-10, maxiter =200){ 
+  i <- 0 
+  cur <- start 
+  stuff <- func(x, y, cur) 
+  res <- c(0, stuff$loglik, cur)
+  prevloglik <- -Inf 
+  while (i < maxiter && abs(stuff$loglik - prevloglik) > tol && stuff$loglik > -Inf) {
+    i <- i + 1 
+    prevloglik <- stuff$loglik 
+    prev <- cur 
+    lambda = 0
+    cur <- prev - ((1/(2^lambda)) * solve(stuff$Hess)) %*% stuff$grad
+    while (func(dat, cur)$loglik < prevloglik){ # step-halving
+      lambda = lambda + 1
+      cur <- prev - ((1/(2^lambda)) * solve(stuff$Hess)) %*% stuff$grad
+    }
+    stuff <- func(x, y, cur) 
+    res <- rbind(res, c(i, stuff$loglik, cur))}
+  
+  return(res)
+}
+
+# NewtonRaphson(x1, y, logisticstuff, rep(1,10))
+```
 

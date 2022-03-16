@@ -176,6 +176,9 @@ pre code {
 <pre class="r"><code>cancer = read.csv(&quot;breast-cancer.csv&quot;) %&gt;% 
   janitor::clean_names() %&gt;% 
   mutate(diagnosis = as.numeric(factor(diagnosis)) - 1)</code></pre>
+</div>
+<div id="logistic" class="section level2">
+<h2>logistic</h2>
 <pre class="r"><code># 10 var
 y = as.matrix(cancer$diagnosis)
 x1 = as.matrix(cancer[, 3:12])
@@ -247,6 +250,32 @@ logisticstuff(x1, y, rep(10, 10))</code></pre>
 ## concave_points_mean                    NaN           NaN                    NaN
 ## symmetry_mean                          NaN           NaN                    NaN
 ## fractal_dimension_mean                 NaN           NaN                    NaN</code></pre>
+</div>
+<div id="newton-raphson" class="section level2">
+<h2>Newton Raphson</h2>
+<pre class="r"><code>NewtonRaphson &lt;- function(x, y, func, start, tol=1e-10, maxiter =200){ 
+  i &lt;- 0 
+  cur &lt;- start 
+  stuff &lt;- func(x, y, cur) 
+  res &lt;- c(0, stuff$loglik, cur)
+  prevloglik &lt;- -Inf 
+  while (i &lt; maxiter &amp;&amp; abs(stuff$loglik - prevloglik) &gt; tol &amp;&amp; stuff$loglik &gt; -Inf) {
+    i &lt;- i + 1 
+    prevloglik &lt;- stuff$loglik 
+    prev &lt;- cur 
+    lambda = 0
+    cur &lt;- prev - ((1/(2^lambda)) * solve(stuff$Hess)) %*% stuff$grad
+    while (func(dat, cur)$loglik &lt; prevloglik){ # step-halving
+      lambda = lambda + 1
+      cur &lt;- prev - ((1/(2^lambda)) * solve(stuff$Hess)) %*% stuff$grad
+    }
+    stuff &lt;- func(x, y, cur) 
+    res &lt;- rbind(res, c(i, stuff$loglik, cur))}
+  
+  return(res)
+}
+
+# NewtonRaphson(x1, y, logisticstuff, rep(1,10))</code></pre>
 </div>
 
 
