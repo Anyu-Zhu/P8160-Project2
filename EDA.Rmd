@@ -1,0 +1,49 @@
+---
+title: "EDA"
+date: "2022/3/15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(caret)
+```
+
+```{r}
+cancer = read.csv("breast-cancer.csv") %>% 
+  mutate(diagnosis = factor(diagnosis))
+
+#mean
+featurePlot(x = cancer[, 3:12],
+            y = cancer$diagnosis,
+            scales = list(x = list(relation = "free"),
+                          y = list(relation = "free")),
+            plot = "density", pch = "|",
+            auto.key = list(columns = 2))
+
+#sd
+featurePlot(x = cancer[, 13:22],
+            y = cancer$diagnosis,
+            scales = list(x = list(relation = "free"),
+                          y = list(relation = "free")),
+            plot = "density", pch = "|",
+            auto.key = list(columns = 2))
+
+#largest
+featurePlot(x = cancer[, 23:32],
+            y = cancer$diagnosis,
+            scales = list(x = list(relation = "free"),
+                          y = list(relation = "free")),
+            plot = "density", pch = "|",
+            auto.key = list(columns = 2))
+
+#compare mean, sd, largest
+featurePlot(x = cancer[, c(3,13,23,4,14,24)],
+            y = cancer$diagnosis,
+            scales = list(x = list(relation = "free"),
+                          y = list(relation = "free")),
+            plot = "density", pch = "|",
+            auto.key = list(columns = 2))
+
+```
+
