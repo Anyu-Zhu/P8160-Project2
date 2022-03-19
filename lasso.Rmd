@@ -25,23 +25,21 @@ y = as.matrix(cancer$diagnosis)
 x1 = as.matrix(cancer[, 3:12])
 x2 = as.matrix(cancer[, 13:22])
 x3 = as.matrix(cancer[, 23:32])
-
-ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5)
 ```
 
 ```{r}
 set.seed(2022)
-cv.lasso1 <- cv.glmnet(x1, y, alpha = 1, family = "binomial", trControl = ctrl)
+cv.lasso1 <- cv.glmnet(x1, y, alpha = 1, family = "binomial", nfolds = 5)
 plot(cv.lasso1)
 lambda1 <- cv.lasso1$lambda.min
 
 set.seed(2022)
-cv.lasso2 <- cv.glmnet(x2, y, alpha = 1, family = "binomial", trControl = ctrl)
+cv.lasso2 <- cv.glmnet(x2, y, alpha = 1, family = "binomial", nfolds = 5)
 plot(cv.lasso2)
 lambda2 <- cv.lasso2$lambda.min
 
 set.seed(2022)
-cv.lasso3 <- cv.glmnet(x3, y, alpha = 1, family = "binomial", trControl = ctrl)
+cv.lasso3 <- cv.glmnet(x3, y, alpha = 1, family = "binomial", nfolds = 5)
 plot(cv.lasso3)
 lambda3 <- cv.lasso3$lambda.min
 
@@ -50,6 +48,7 @@ value <- c(lambda1, lambda2, lambda3)
 lambda_df <- cbind(lambda, value)
 lambda_df <- as.data.frame(lambda_df)
 lambda_df
+
 ```
 
 
