@@ -1,0 +1,55 @@
+---
+title: "lasso"
+author: "Yijing Tao"
+date: "3/18/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(glmnet)
+library(pdp)
+library(caret)
+```
+
+## data preprocessing
+
+```{r}
+cancer = read.csv("breast-cancer.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1)
+
+y = as.matrix(cancer$diagnosis)
+x1 = as.matrix(cancer[, 3:12])
+x2 = as.matrix(cancer[, 13:22])
+x3 = as.matrix(cancer[, 23:32])
+
+ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5)
+```
+
+```{r}
+set.seed(2022)
+cv.lasso1 <- cv.glmnet(x1, y, alpha = 1, family = "binomial", trControl = ctrl)
+plot(cv.lasso1)
+lambda1 <- cv.lasso1$lambda.min
+
+set.seed(2022)
+cv.lasso2 <- cv.glmnet(x2, y, alpha = 1, family = "binomial", trControl = ctrl)
+plot(cv.lasso2)
+lambda2 <- cv.lasso2$lambda.min
+
+set.seed(2022)
+cv.lasso3 <- cv.glmnet(x3, y, alpha = 1, family = "binomial", trControl = ctrl)
+plot(cv.lasso3)
+lambda3 <- cv.lasso3$lambda.min
+
+lambda <- c("lambda_mean", "lambda_se", "lambda_worst")
+value <- c(lambda1, lambda2, lambda3)
+lambda_df <- cbind(lambda, value)
+lambda_df <- as.data.frame(lambda_df)
+lambda_df
+```
+
+
