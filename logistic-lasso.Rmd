@@ -1,0 +1,69 @@
+---
+title: "Logistic-Lasso"
+author: "Haolin Zhong"
+date: "2022/3/20"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Formulas
+
+- canonical link function:
+
+$$
+log(\frac{\pi}{1-\pi}) = \boldsymbol {\beta}^T X = \theta
+$$
+
+- likelihood:
+
+$$
+L = \prod_{i =1}^n \left[ \left(\frac{e^{\theta_i}}{1 + e^{\theta_i}}\right)^{y_i} \left(\frac{1}{1 + e^{\theta_i}}\right)^{1 - y_i}  \right]
+$$
+
+- loglikelihood:
+
+$$
+l = \sum_{i = 1}^n \left[y_i \theta_i - \log(1 + e^{\theta_i}) \right]
+$$
+
+
+- objective function (cost function) with L1 regularization term
+
+$$
+f(\boldsymbol \beta) = -l + \lambda \sum_{j=1}^p|\beta_j| = -\sum_{i = 1}^n \left[y_i \theta_i - \log(1 + e^{\theta_i}) \right] + \lambda \sum_{j=0}^p|\beta_j|
+$$
+
+
+- The partial derivative of $\beta_j$ ($j \in N, j \geq 0, \beta_j \not = 0$):
+
+  - Here we assume $x_{i0} = 1$ for the intercept term.
+
+$$
+\frac{\partial f(\boldsymbol \beta)}{\partial \beta_j} = - \sum_{i = 1}^n x_{ij}(y_i - \pi_i) + \text{sign}(\beta_j) \cdot \lambda
+$$
+
+
+- When we are taking the $\lambda_{max}$, increasing in absolute value of any $\beta_j$ will result into a higher cost. Therefore, we know:
+
+  - when $\beta_j > 0$:
+
+$$
+\forall j, \quad  \frac{\partial f(\boldsymbol \beta)}{\partial \beta_j} > 0 \implies \lambda > \sum_{i = 1}^n x_{ij}(y_i - \pi_i)
+$$
+
+  - when $\beta_j < 0$:
+  
+$$
+\forall j, \quad  \frac{\partial f(\boldsymbol \beta)}{\partial \beta_j} < 0 \implies \lambda > -\sum_{i = 1}^n x_{ij}(y_i - \pi_i)
+$$
+
+
+- Incorporating above conditions, we can know that, for all $\lambda$ that lead to all $\beta_j = 0$, the smallest one is:
+
+$$
+|\sum_{i = 1}^n x_{ij}(y_i - \pi_i)|_{max}
+$$
+
