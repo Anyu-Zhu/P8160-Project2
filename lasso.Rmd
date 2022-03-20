@@ -25,6 +25,7 @@ y = as.matrix(cancer$diagnosis)
 x1 = as.matrix(cancer[, 3:12])
 x2 = as.matrix(cancer[, 13:22])
 x3 = as.matrix(cancer[, 23:32])
+x4 = as.matrix(cancer[, 3:32])
 ```
 
 ```{r}
@@ -49,6 +50,62 @@ lambda_df <- cbind(lambda, value)
 lambda_df <- as.data.frame(lambda_df)
 lambda_df
 
+summary(cv.lasso1)
+
+set.seed(2022)
+cv.lasso4 <- cv.glmnet(x4, y, alpha = 1, family = "binomial", nfolds = 5)
+plot(cv.lasso4)
+cv.lasso4$lambda.min
+cv.lasso4
 ```
 
+```{r}
+ctrl1 <- trainControl(method = "repeatedcv", number = 5)
+
+set.seed(2022)
+lasso.fit1 <- train(x = x1, 
+                   y = cancer$diagnosis,
+                   method = "glmnet",
+                   tuneGrid = expand.grid(alpha = 1, 
+                                          lambda = exp(seq(-1, 1, length=100))),
+                   # preProc = c("center", "scale"),
+                   trControl = ctrl1)
+l1 <- lasso.fit1$bestTune$lambda
+
+set.seed(2022)
+lasso.fit2 <- train(x = x2, 
+                   y = cancer$diagnosis,
+                   method = "glmnet",
+                   tuneGrid = expand.grid(alpha = 1, 
+                                          lambda = exp(seq(-2, 2, length=100))),
+                   # preProc = c("center", "scale"),
+                   trControl = ctrl1)
+l2 <- lasso.fit2$bestTune$lambda
+
+set.seed(2022)
+lasso.fit3 <- train(x = x3, 
+                   y = cancer$diagnosis,
+                   method = "glmnet",
+                   tuneGrid = expand.grid(alpha = 1, 
+                                          lambda = exp(seq(-1,1, length=100))),
+                   # preProc = c("center", "scale"),
+                   trControl = ctrl1)
+l3 <- lasso.fit3$bestTune$lambda
+
+set.seed(2022)
+lasso.fit4 <- train(x = x4, 
+                   y = cancer$diagnosis,
+                   method = "glmnet",
+                   tuneGrid = expand.grid(alpha = 1, 
+                                          lambda = exp(seq(-1, 1, length=100))),
+                   # preProc = c("center", "scale"),
+                   trControl = ctrl1)
+l4 <- lasso.fit4$bestTune$lambda
+
+lambda <- c("lambda_mean", "lambda_se", "lambda_worst", "lambda_all")
+value <- c(l1,l2,l3,l4)
+lambda_best_df <- cbind(lambda, value)
+lambda_best_df <- as.data.frame(lambda_best_df)
+lambda_best_df
+```
 
