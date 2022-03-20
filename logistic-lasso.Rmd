@@ -67,3 +67,6 @@ $$
 |\sum_{i = 1}^n x_{ij}(y_i - \pi_i)|_{max}
 $$
 
+  - When all $\beta_j = 0$, $\pi_i = 0$, therefore $\lambda_{max} = |\sum_{i = 1}^n x_{ij}y_i|_{max}$ 
+
+
