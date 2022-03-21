@@ -21,7 +21,9 @@ cancer = read.csv("breast-cancer.csv") %>%
 
 ```{r}
 y = as.matrix(cancer$diagnosis)
-x1 = scale(as.matrix(cancer[, 3:12])) # Here I add scale() to avoid float number overflow
+x1 = scale(as.matrix(cancer[, 2:11])) # Here I add scale() to avoid float number overflow
+x2 = scale(as.matrix(cancer[, 2:21]))
+x3 = scale(as.matrix(cancer[, 2:31]))
 
 logisticstuff <- function(x, y , betavec) {
 
@@ -39,6 +41,8 @@ logisticstuff <- function(x, y , betavec) {
 }
 
 logisticstuff(x1, y, rep(2, 10))
+logisticstuff(x2, y, rep(2, 20))
+logisticstuff(x3, y, rep(2, 30))
 ```
 
 
@@ -79,8 +83,9 @@ NewtonRaphson <- function(x, y, func, start, tol=1e-10, maxiter = 1000) {
   return(res)
 }
 
-
-a = NewtonRaphson(x1, y, logisticstuff, rep(1,10))
+nr1 = NewtonRaphson(x1, y, logisticstuff, rep(1,10))
+nr2 = NewtonRaphson(x2, y, logisticstuff, rep(1,20))
+nr3 = NewtonRaphson(x3, y, logisticstuff, rep(1,30))
 ```
 
 
