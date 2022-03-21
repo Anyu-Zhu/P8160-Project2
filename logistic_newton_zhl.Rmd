@@ -1,0 +1,95 @@
+---
+title: "logistic_newton_zhl"
+author: "Haolin Zhong"
+date: "2022/3/20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+```
+
+
+```{r}
+cancer = read.csv("breast-cancer.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
+  select(-id)
+```
+
+
+```{r}
+y = as.matrix(cancer$diagnosis)
+x1 = scale(as.matrix(cancer[, 3:12])) # Here I add scale() to avoid float number overflow
+
+logisticstuff <- function(x, y , betavec) {
+
+  u <- x %*% betavec
+  expu <- exp(u)
+  # loglikelihood
+  loglik <- t(u) %*% y - sum(log(1 + expu))
+  p <- expu / (1 + expu)
+  # gradient
+  grad <- t(x) %*% (y - p)
+  # hessian
+  Hess <- t(x) %*% diag(as.vector(p * (1-p))) %*% x
+
+  return(list(loglik = loglik, grad = grad, Hess = Hess))
+}
+
+logisticstuff(x1, y, rep(2, 10))
+```
+
+
+```{r}
+NewtonRaphson <- function(x, y, func, start, tol=1e-10, maxiter = 1000) {
+  i = 0
+  cur = start
+  stuff = func(x, y, cur)
+  res = c(0, stuff$loglik, cur)
+  prevloglik = -Inf # To make sure it iterates
+  while(i < maxiter && abs(stuff$loglik - prevloglik) > tol) {
+    i = i + 1
+    prevloglik = stuff$loglik
+    prev = cur
+    
+    # redirection
+    hess = stuff$Hess
+    hess.eigen = eigen(stuff$Hess)$values
+    
+    if (sum(hess.eigen) > 0){
+      g = max(hess.eigen) + 1
+      hess = hess - g*diag(1, dim(hess))
+    }
+    
+    cur = prev - solve(hess) %*% stuff$grad
+    
+    # step halving
+    lambda = 1
+    while (func(x, y, cur)$loglik < prevloglik) {
+      lambda = lambda / 2
+      cur = prev - lambda * solve(hess) %*% stuff$grad
+    }
+    
+    stuff = func(x, y, cur) # log-lik, gradient, Hessian
+    res = rbind(res, c(i, stuff$loglik, cur))
+    # Add current values to results matrix
+  }
+  return(res)
+}
+
+
+a = NewtonRaphson(x1, y, logisticstuff, rep(1,10))
+```
+
+
+```{r}
+library(ggplot2)
+ans = data.frame(NewtonRaphson(x1, y, logisticstuff, rep(0.5,10)))
+colnames(ans) = c("iteration", "log likelihood")
+ggplot(ans, aes(x = iteration, y = `log likelihood`)) +
+  geom_point(size = 0.5) +
+  geom_line()
+```
+
