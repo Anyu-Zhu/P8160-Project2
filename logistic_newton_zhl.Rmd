@@ -91,9 +91,21 @@ nr3 = NewtonRaphson(x3, y, logisticstuff, rep(1,30))
 
 ```{r}
 library(ggplot2)
-ans = data.frame(NewtonRaphson(x1, y, logisticstuff, rep(0.5,10)))
+ans = data.frame(nr1)
 colnames(ans) = c("iteration", "log likelihood")
 ggplot(ans, aes(x = iteration, y = `log likelihood`)) +
+  geom_point(size = 0.5) +
+  geom_line()
+
+ans2 = data.frame(nr2)
+colnames(ans2) = c("iteration", "log likelihood")
+ggplot(ans2, aes(x = iteration, y = `log likelihood`)) +
+  geom_point(size = 0.5) +
+  geom_line()
+
+ans3 = data.frame(nr3)
+colnames(ans2) = c("iteration", "log likelihood")
+ggplot(ans2, aes(x = iteration, y = `log likelihood`)) +
   geom_point(size = 0.5) +
   geom_line()
 ```
