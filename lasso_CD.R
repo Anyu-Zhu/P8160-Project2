@@ -74,8 +74,8 @@ lassoCD <- function(
             Wres <- getW(Pres)
             Zres <- getZ(X, y, betaresj, Pres, Wres)
             Wdiag <- diag(c(W), N, N)
-            betaj <- (t(X[,j]) %*% Wdiag %*% (Z-Pres))
-            betaj <- soft_threshold(betaj/N, lambda)
+            betaj <- (t(X[,j]) %*% Wdiag %*% (Z-(X %*% betaresj)))
+            betaj <- soft_threshold(betaj, lambda)
             betaj <- betaj/(t(X[,j]) %*% Wdiag %*% X[,j])
             betavec[j] <- betaj
         }
@@ -126,3 +126,38 @@ path.plot <- path1 %>%
 
 path.plot
 
+
+library(tidyverse)
+cancer = read.csv("breast-cancer.csv") %>% 
+    mutate(diagnosis = factor(diagnosis))
+
+mean(cancer$radius_mean)
+sqrt(var(cancer$radius_mean))
+
+cancer["intercept"] = 1
+cancer$diagnosis = case_when(cancer$diagnosis == "M" ~ 1,
+                             TRUE ~ 0)
+data.cancer = data.matrix(cancer[3:33])
+
+cancer.lassoCD <- lassoCD(data.cancer, cancer$diagnosis, init_beta = c(rep(20,31)), lambda = 0)
+lassoCD.predict <- function(betavec, X_new, y){
+    Py <- 1/(1+exp(-(X_new %*% betavec)))
+    Pn <- 1-Py
+    res <- list(P_pos = Py, P_neg = Pn, res = Py>Pn)
+    res$res = as.numeric(res$res)
+    return(res)
+}
+
+cancer.lassoCD.predict <- lassoCD.predict(cancer.lassoCD[1002,],scale(data.cancer), cancer$diagnosis)
+
+pred.obs <- data.frame(pred = cancer.lassoCD.predict$res, obs = cancer$diagnosis)
+pred.obs$mis = pred.obs$pred == pred.obs$obs
+sum(pred.obs$mis)
+
+library(glmnet)
+glmnet.cancer = glmnet(data.cancer, cancer$diagnosis, family = "binomial", lambda = 0, intercept = FALSE)
+predict.glmnet(glmnet.cancer, s = 0.5, type = "coefficient")
+
+
+library(pROC)
+roc(pred.obs$pred, pred.obs$obs)
