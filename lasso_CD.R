@@ -100,3 +100,29 @@ sim_logit_dat <- function(n, p, k, beta){
 
 sim.dat <- sim_logit_dat(500, 10, 7, c(5,6,7,8,9,10,1))
 sim.beta.res <- lassoCD(sim.dat$X,sim.dat$y, lambda = 0.02, init_beta = rep(3,10), max_iter = 1e3, tol = 1e-5)
+
+#lassoCD(x1, y, lambda = 0.02, init_beta = rep(3,10), max_iter = 1e3, tol = 1e-5)
+
+path <- function(x, y, grid){
+  betas <- NULL
+  for (i in 1:length(grid)){
+    cor.result <- lassoCD(x, y, lambda = grid[i], init_beta = rep(3, dim(x)[2]), max_iter = 1e3, tol = 1e-5)
+    lasbeta <- cor.result[nrow(cor.result),3:dim(cor.result)[2]]
+    start <- lasbeta
+    betas <- rbind(betas,c(lasbeta))
+  }
+  return(data.frame(cbind(grid,betas)))
+}
+path1 = path(x1, y, grid=exp(seq(-1,-10, length=100)))
+
+path.plot <- path1 %>%
+  gather(key = par, value = estimate, c(2:dim(path1)[2])) %>% 
+  ggplot(aes(x = log(grid), y = estimate, group = par, col = par)) +
+  geom_line()+
+  ggtitle("path of solutions with a sequence of descending lambda's") +
+  xlab("log(Lambda)") + 
+  ylab("Estimate") +
+  theme(legend.position = "right", legend.text = element_text(size = 6))
+
+path.plot
+
