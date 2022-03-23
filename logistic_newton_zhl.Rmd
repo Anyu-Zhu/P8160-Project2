@@ -27,6 +27,9 @@ x3 = scale(as.matrix(cancer[, 2:31]))
 
 logisticstuff <- function(x, y , betavec) {
 
+  x = cbind(1, x)
+  colnames(x)[1] = "intercept"
+  
   u <- x %*% betavec
   expu <- exp(u)
   # loglikelihood
@@ -35,14 +38,14 @@ logisticstuff <- function(x, y , betavec) {
   # gradient
   grad <- t(x) %*% (y - p)
   # hessian
-  Hess <- t(x) %*% diag(as.vector(p * (1-p))) %*% x
+  Hess <- -t(x) %*% diag(as.vector(p * (1-p))) %*% x
 
   return(list(loglik = loglik, grad = grad, Hess = Hess))
 }
 
-logisticstuff(x1, y, rep(2, 10))
-logisticstuff(x2, y, rep(2, 20))
-logisticstuff(x3, y, rep(2, 30))
+logisticstuff(x1, y, rep(2, 11))
+logisticstuff(x2, y, rep(2, 21))
+logisticstuff(x3, y, rep(2, 31))
 ```
 
 
@@ -80,18 +83,20 @@ NewtonRaphson <- function(x, y, func, start, tol=1e-10, maxiter = 1000) {
     res = rbind(res, c(i, stuff$loglik, cur))
     # Add current values to results matrix
   }
+  colnames(res) = c("i", "loglik", paste0("beta", 0:(ncol(res)-3)))
   return(res)
 }
 
-nr1 = NewtonRaphson(x1, y, logisticstuff, rep(1,10))
-nr2 = NewtonRaphson(x2, y, logisticstuff, rep(1,20))
-nr3 = NewtonRaphson(x3, y, logisticstuff, rep(1,30))
+nr1 = NewtonRaphson(x1, y, logisticstuff, rep(2,11))
+nr1
+nr2 = NewtonRaphson(x2, y, logisticstuff, rep(1,21))
+nr3 = NewtonRaphson(x3, y, logisticstuff, rep(1,31))
 ```
 
 
 ```{r}
 library(ggplot2)
-ans = data.frame(NewtonRaphson(x1, y, logisticstuff, rep(0.5,10)))
+ans = data.frame(NewtonRaphson(x1, y, logisticstuff, rep(0.5,11)))
 colnames(ans) = c("iteration", "log likelihood")
 ggplot(ans, aes(x = iteration, y = `log likelihood`)) +
   geom_point(size = 0.5) +
