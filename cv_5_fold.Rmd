@@ -117,7 +117,7 @@ for (l in lambda.seq) {
   for (k in 1:nrow(folds)) {
     LogLASSO = lassoCD(X = as.matrix(train.X), y = train.y, lambda = l, init_beta = c(rep(0, dim(train.X)[2])), max_iter = 1e3, tol = 1e-5)
     LL.coefs = LogLASSO[,3:32]
-    rmse = sum(sqrt((test.y - as.matrix(test.X) %*% LL.coefs)^2))
+    rmse = sum(sqrt((test.y - as.matrix(test.X) %*% t(LL.coefs))^2))
     rmses = cbind(rmses, rmse)
   }
   avg.rmses = cbind(avg.rmses, mean(rmses))
