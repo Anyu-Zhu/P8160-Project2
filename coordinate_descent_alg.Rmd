@@ -1,0 +1,151 @@
+---
+title: "coordinate_descent_alg"
+author: "Renjie Wei"
+date: '2022-03-24'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r CD_lasso_logistic}
+soft_threshold <- function(beta, lambda) {
+    sign(beta) * max(abs(beta) - lambda, 0)
+}
+
+######## logistic version ########
+
+# calculate z, px, w each turn, then update betaj
+
+getP <- function(X, betavec){
+    Px <- 1/(1 + exp(-(X %*% betavec)))
+    return(Px)
+}
+
+getW <- function(Px){
+    W <- Px*(1-Px)
+    return(Px)
+}
+
+getZ <- function(X, y, betavec, Px, W){
+    Z <- X %*% betavec + (y - Px)/W
+    return(Z)
+}
+
+lassoCD <- function(
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
+){
+    betavec <- init_beta
+    N <- length(y)
+    i <- 0
+    loss <- 1e5
+    prevloss <- Inf
+    res <- c(0, loss, betavec)
+    cont <- TRUE
+    while(i <= max_iter && cont){
+        i <- i + 1
+        prevloss <- loss
+        for(j in 1:length(betavec)){
+            Px <- getP(X, betavec)
+            W <- getW(Px)
+            W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
+            Z <- getZ(X, y, betavec, Px, W)
+            betaresj <- betavec
+            betaresj[j] <- 0
+            Zresj <- X %*% betaresj
+            betaj <- 
+                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
+            betavec[j] <- betaj
+            loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
+        }
+        print(loss)
+        if(abs(prevloss - loss) < tol || loss > Inf){
+            cont <- FALSE
+        }
+        res <- rbind(res, c(i, loss, betavec))
+    }
+    return(res)
+}
+```
+
+```{r CD_lasso_mtx}
+## matrix version ##
+lassoCD.matrix <- function(
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
+){
+    betavec <- init_beta
+    N <- length(y)
+    i <- 0
+    loss <- 1e5
+    prevloss <- Inf
+    res <- c(0, loss, betavec)
+    cont <- TRUE
+    while(i <= max_iter && cont){
+        i <- i + 1
+        prevloss <- loss
+        for(j in 1:length(betavec)){
+            Px <- getP(X, betavec)
+            W <- getW(Px)
+            W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
+            Wdiag <- diag(c(W), N, N)
+            Z <- getZ(X, y, betavec, Px, W)
+            betaresj <- betavec
+            betaresj[j] <- 0
+            Zresj <- X %*% betaresj
+            betaj <- 
+                soft_threshold((1/N) * (t(X[,j]) %*% Wdiag %*% (Z-(X %*% betaresj))),
+                               lambda)/(t(X[,j]) %*% Wdiag %*% X[,j])
+            betavec[j] <- betaj
+            loss <- (1/(2*N))*sum(Wdiag %*% (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
+        }
+        print(loss)
+        if(abs(prevloss - loss) < tol || loss > Inf){
+            cont <- FALSE
+        }
+        res <- rbind(res, c(i, loss, betavec))
+    }
+    return(res)
+}
+```
+
+```{r for_CD_lasso_pre}
+lassoCD.predict <- function(betavec, X_new, y){
+    Py <- 1/(1 + exp(-(X_new %*% betavec)))
+    Pn <- 1-Py
+    res <- list(P_pos = Py, P_neg = Pn, res = Py > Pn)
+    res$res = as.numeric(res$res)
+    return(res)
+}
+
+```
+
+```{r test_alg}
+library(tidyverse)
+cancer = read.csv("breast-cancer.csv") %>% 
+    mutate(diagnosis = factor(diagnosis))
+
+mean(cancer$radius_mean)
+sqrt(var(cancer$radius_mean))
+
+cancer$diagnosis = case_when(cancer$diagnosis == "M" ~ 1,
+                             TRUE ~ 0)
+data.cancer = data.matrix(cancer[3:32])
+
+cancer.lassoCD <- lassoCD.matrix(scale(data.cancer), cancer$diagnosis, init_beta = c(rep(0,30)), lambda = 0.05)
+
+cancer.lassoCD.predict <- lassoCD.predict(cancer.lassoCD[2,3:32],scale(data.cancer), cancer$diagnosis)
+
+pred.obs <- data.frame(pred = cancer.lassoCD.predict$res, obs = cancer$diagnosis)
+pred.obs$mis = pred.obs$pred == pred.obs$obs
+sum(pred.obs$mis)
+
+library(glmnet)
+glmnet.cancer = glmnet(data.cancer, cancer$diagnosis, family = "binomial", lambda = 0, intercept = FALSE)
+predict.glmnet(glmnet.cancer, s = 0.5, type = "coefficient")
+
+
+library(pROC)
+roc(pred.obs$pred, pred.obs$obs)
+```
+

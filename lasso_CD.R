@@ -2,7 +2,7 @@ soft_threshold <- function(beta, lambda) {
     sign(beta) * max(abs(beta) - lambda, 0)
 }
 
-lasso_cd <- function(x, y, lambda, beta = NULL, tol = 1e-10, max_iter = 500,
+lasso_cd <- function(x, y, lambda, beta = NULL, tol = 1e-10, max_iter = 5000,
                      patience = 10) {
 
     if(is.null(beta)) {
@@ -54,55 +54,153 @@ getZ <- function(X, y, betavec, Px, W){
 }
 
 lassoCD <- function(
-        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e3, tol = 1e-5
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
 ){
     betavec <- init_beta
-    betares <- init_beta
     N <- length(y)
     i <- 0
+    loss <- 1e5
+    prevloss <- Inf
+    res <- c(0, loss, betavec)
     cont <- TRUE
     while(i <= max_iter && cont){
-        i <- i+1
-        betaold <- betavec
+        i <- i + 1
+        prevloss <- loss
         for(j in 1:length(betavec)){
             Px <- getP(X, betavec)
             W <- getW(Px)
+            W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
             Z <- getZ(X, y, betavec, Px, W)
             betaresj <- betavec
             betaresj[j] <- 0
-            Pres <- getP(X, betaresj)
-            Wres <- getW(Pres)
-            Zres <- getZ(X, y, betaresj, Pres, Wres)
-            Wdiag <- diag(c(W), N, N)
-            betaj <- (t(X[,j]) %*% Wdiag %*% (Z-(X %*% betaresj)))
-            betaj <- soft_threshold(betaj, lambda)
-            betaj <- betaj/(t(X[,j]) %*% Wdiag %*% X[,j])
+            Zresj <- X %*% betaresj
+            betaj <- 
+                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/mean(W * X[,j] * X[,j])
             betavec[j] <- betaj
+            loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
         }
-        if(sum(abs(betaold - betavec)) <= tol){
+        print(loss)
+        if(abs(prevloss - loss) < tol || loss > Inf){
             cont <- FALSE
         }
-        betares <- rbind(betares, betavec)
+        res <- rbind(res, c(i, loss, betavec))
     }
-    return(betares)
+    return(res)
 }
 
-sim_logit_dat <- function(n, p, k, beta){
-    x <- matrix(rnorm(n*p, 0, 1), n, p)
-    betavec <- rep(0, p)
-    betavec[1:k] <- beta
-    p <- 1/(1+exp(-(x %*% betavec)))
-    y <- rbinom(length(p), size = 1, prob = p)
-    ret <- list(x, y)
-    names(ret) <- c("X", "y")
-    return(ret)
+## matrix version ##
+lassoCD.matrix <- function(
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
+){
+    betavec <- init_beta
+    N <- length(y)
+    i <- 0
+    loss <- 1e5
+    prevloss <- Inf
+    res <- c(0, loss, betavec)
+    cont <- TRUE
+    while(i <= max_iter && cont){
+        i <- i + 1
+        prevloss <- loss
+        for(j in 1:length(betavec)){
+            Px <- getP(X, betavec)
+            W <- getW(Px)
+            W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
+            Wdiag <- diag(c(W), N, N)
+            Z <- getZ(X, y, betavec, Px, W)
+            betaresj <- betavec
+            betaresj[j] <- 0
+            Zresj <- X %*% betaresj
+            betaj <- 
+                soft_threshold((1/N) * (t(X[,j]) %*% Wdiag %*% (Z-(X %*% betaresj))),
+                               lambda)/(1/N)*(t(X[,j]) %*% Wdiag %*% X[,j])
+            betavec[j] <- betaj
+            loss <- (1/(2*N))*sum(Wdiag %*% (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
+        }
+        print(loss)
+        if(abs(prevloss - loss) < tol || loss > Inf){
+            cont <- FALSE
+        }
+        res <- rbind(res, c(i, loss, betavec))
+    }
+    return(res)
 }
 
-sim.dat <- sim_logit_dat(500, 10, 7, c(5,6,7,8,9,10,1))
-sim.beta.res <- lassoCD(sim.dat$X,sim.dat$y, lambda = 0.02, init_beta = rep(3,10), max_iter = 1e3, tol = 1e-5)
+##########
+coordinatelasso <- function(lambda, dat, s, tol=1e-10, maxiter = 200){
+    i <- 0 
+    pp <- length(s)
+    n <- length(dat$y)
+    betavec <- s
+    loglik <- 1e6
+    res <- c(0, loglik, betavec)
+    prevloglik <- Inf # To make sure it iterates 
+    while (i < maxiter && abs(loglik - prevloglik) > tol && loglik < Inf) {
+        i <- i + 1 
+        prevloglik <- loglik
+        for (j in 1:pp) {
+            u <- dat$X %*% betavec
+            expu <- exp(u) 
+            prob <- expu/(expu+1)
+            w <- prob*(1-prob) # weighted
+            # avoid coeffcients diverging in order to achieve fitted  probabilities of 0 or 1.
+            w <- ifelse(abs(w-0) < 1e-5, 1e-5, w)
+            z <- u + (dat$y-prob)/w
+            # calculate noj
+            znoj <- dat$X[,-j] %*% betavec[-j]
+            # revise the formula to be z
+            betavec[j] <- soft_threshold(mean(w*(dat$X[,j])*(z - znoj)), lambda)/(mean(w*dat$X[,j]*dat$X[,j]))
+        }
+        loglik <- sum(w*(z-dat$X %*% betavec)^2)/(2*n) + lambda * sum(abs(betavec))
+        res <- rbind(res, c(i, loglik, betavec))}  
+    return(res)
+}
 
-#lassoCD(x1, y, lambda = 0.02, init_beta = rep(3,10), max_iter = 1e3, tol = 1e-5)
+dat = list(X = data.cancer, y = cancer$diagnosis)
+coordlasso.res <- coordinatelasso(0.5, dat, rep(0,31))
+##########
 
+library(tidyverse)
+cancer = read.csv("breast-cancer.csv") %>% 
+    mutate(diagnosis = factor(diagnosis))
+
+mean(cancer$radius_mean)
+sqrt(var(cancer$radius_mean))
+
+cancer["intercept"] = 1
+cancer$diagnosis = case_when(cancer$diagnosis == "M" ~ 1,
+                             TRUE ~ 0)
+data.cancer = data.matrix(cancer[3:33])
+
+cancer.lassoCD <- lassoCD(data.cancer, cancer$diagnosis, init_beta = c(rep(0,31)), lambda = 0.5)
+cancer.lassoCD.mtx <- lassoCD.matrix(data.cancer, cancer$diagnosis, init_beta = c(rep(20,31)), lambda = 0.5)
+lassoCD.predict <- function(betavec, X_new, y){
+    Py <- 1/(1 + exp(-(X_new %*% betavec)))
+    Pn <- 1-Py
+    res <- list(P_pos = Py, P_neg = Pn, res = Py > Pn)
+    res$res = as.numeric(res$res)
+    return(res)
+}
+
+cancer.lassoCD.predict <- lassoCD.predict(cancer.lassoCD[6,3:33],data.cancer, cancer$diagnosis)
+
+pred.obs <- data.frame(pred = cancer.lassoCD.predict$res, obs = cancer$diagnosis)
+pred.obs$mis = pred.obs$pred == pred.obs$obs
+sum(pred.obs$mis)
+
+library(glmnet)
+glmnet.cancer = glmnet(data.cancer, cancer$diagnosis, family = "binomial", lambda = 0, intercept = FALSE)
+predict.glmnet(glmnet.cancer, s = 0.5, type = "coefficient")
+
+
+library(pROC)
+roc(pred.obs$pred, pred.obs$obs)
+
+
+
+###################################################
+#                 for path                        #
+###################################################
 path <- function(x, y, grid){
   betas <- NULL
   for (i in 1:length(grid)){
@@ -127,37 +225,6 @@ path.plot <- path1 %>%
 path.plot
 
 
-library(tidyverse)
-cancer = read.csv("breast-cancer.csv") %>% 
-    mutate(diagnosis = factor(diagnosis))
-
-mean(cancer$radius_mean)
-sqrt(var(cancer$radius_mean))
-
-cancer["intercept"] = 1
-cancer$diagnosis = case_when(cancer$diagnosis == "M" ~ 1,
-                             TRUE ~ 0)
-data.cancer = data.matrix(cancer[3:33])
-
-cancer.lassoCD <- lassoCD(data.cancer, cancer$diagnosis, init_beta = c(rep(20,31)), lambda = 0)
-lassoCD.predict <- function(betavec, X_new, y){
-    Py <- 1/(1+exp(-(X_new %*% betavec)))
-    Pn <- 1-Py
-    res <- list(P_pos = Py, P_neg = Pn, res = Py>Pn)
-    res$res = as.numeric(res$res)
-    return(res)
-}
-
-cancer.lassoCD.predict <- lassoCD.predict(cancer.lassoCD[1002,],scale(data.cancer), cancer$diagnosis)
-
-pred.obs <- data.frame(pred = cancer.lassoCD.predict$res, obs = cancer$diagnosis)
-pred.obs$mis = pred.obs$pred == pred.obs$obs
-sum(pred.obs$mis)
-
-library(glmnet)
-glmnet.cancer = glmnet(data.cancer, cancer$diagnosis, family = "binomial", lambda = 0, intercept = FALSE)
-predict.glmnet(glmnet.cancer, s = 0.5, type = "coefficient")
 
 
-library(pROC)
-roc(pred.obs$pred, pred.obs$obs)
+
