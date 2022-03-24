@@ -1,0 +1,126 @@
+---
+title: "5-fold cv"
+author: "Yijing Tao"
+date: "3/24/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(glmnet)
+library(pdp)
+library(caret)
+library(modelr)
+```
+
+## data preprocessing
+
+```{r data, message = FALSE }
+standardize = function(col) {
+  mean = mean(col)
+  stdev = sd(col)
+  return((col - mean)/stdev)
+}
+
+# just standardize the covariates
+standardized.data = read.csv(file = "breast-cancer.csv") %>% 
+  dplyr::select(radius_mean:fractal_dimension_worst) %>% 
+  map_df(.x = ., standardize)
+
+# add back in the response and ids
+data = cbind(read.csv(file = "breast-cancer.csv") %>% dplyr::select(diagnosis), standardized.data) %>% 
+  mutate(diagnosis = ifelse(diagnosis == "M", 1, 0))
+```
+
+## lassocd
+```{r}
+soft_threshold <- function(beta, lambda) {
+    sign(beta) * max(abs(beta) - lambda, 0)
+}
+
+getP <- function(X, betavec){
+    Px <- 1/(1 + exp(-(X %*% betavec)))
+    return(Px)
+}
+
+getW <- function(Px){
+    W <- Px*(1-Px)
+    return(Px)
+}
+
+getZ <- function(X, y, betavec, Px, W){
+    Z <- X %*% betavec + (y - Px)/W
+    return(Z)
+}
+
+
+lassoCD <- function(
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
+){
+    betavec <- init_beta
+    N <- length(y)
+    i <- 0
+    loss <- 1e5
+    prevloss <- Inf
+    res <- c(0, loss, betavec)
+    cont <- TRUE
+    while(i <= max_iter && cont){
+        i <- i + 1
+        prevloss <- loss
+        for(j in 1:length(betavec)){
+            Px <- getP(X, betavec)
+            W <- getW(Px)
+            W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
+            Z <- getZ(X, y, betavec, Px, W)
+            betaresj <- betavec
+            betaresj[j] <- 0
+            Zresj <- X %*% betaresj
+            betaj <- 
+                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/mean(W * X[,j] * X[,j])
+            betavec[j] <- betaj
+            loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
+        }
+        print(loss)
+        if(abs(prevloss - loss) < tol || loss > Inf){
+            cont <- FALSE
+        }
+        res <- rbind(res, c(i, loss, betavec))
+    }
+    return(res)
+}
+```
+
+
+
+```{r 5-fold-cv }
+set.seed(8160)
+# lambdas to cross-validate against
+lambda.seq = exp(seq(-1,-10, length=100))
+avg.rmses = NULL
+
+# Set up the datasets for cross-validation
+k=5
+folds = crossv_kfold(data, k)
+train.idx = folds[k,1][[1]][[toString(k)]]$idx
+train = data[train.idx,]
+train.X = train %>% dplyr::select(radius_mean:fractal_dimension_worst)
+train.y = train$diagnosis
+test = data[-train.idx,]
+test.X = test %>% dplyr::select(radius_mean:fractal_dimension_worst)
+test.y = test$diagnosis
+lassoCD(X = as.matrix(train.X), y = train.y, lambda = l, init_beta = c(rep(0, 30)), max_iter = 1e3, tol = 1e-5)
+
+for (l in lambda.seq) {
+  rmses = NULL
+  for (k in 1:nrow(folds)) {
+    LogLASSO = lassoCD(X = as.matrix(train.X), y = train.y, lambda = l, init_beta = c(rep(0, dim(train.X)[2])), max_iter = 1e3, tol = 1e-5)
+    LL.coefs = LogLASSO[,3:32]
+    rmse = sum(sqrt((test.y - as.matrix(test.X) %*% LL.coefs)^2))
+    rmses = cbind(rmses, rmse)
+  }
+  avg.rmses = cbind(avg.rmses, mean(rmses))
+  print(paste("iter: lambda = ", l, "done"))
+}
+```

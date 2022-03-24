@@ -40,6 +40,11 @@ plot(cv.lasso2)
 lambda2 <- cv.lasso2$lambda.min
 
 set.seed(2022)
+lasso2 <- glmnet(x2, y, alpha = 1, family = "binomial", nfolds = 5)
+plot(lasso2)
+summary(lasso2)
+lasso2$
+set.seed(2022)
 cv.lasso3 <- cv.glmnet(x3, y, alpha = 1, family = "binomial", nfolds = 5)
 plot(cv.lasso3)
 lambda3 <- cv.lasso3$lambda.min
@@ -57,6 +62,7 @@ cv.lasso4 <- cv.glmnet(x4, y, alpha = 1, family = "binomial", nfolds = 5)
 plot(cv.lasso4)
 cv.lasso4$lambda.min
 cv.lasso4
+predict(cv.lasso4, s="lambda.min", type = "coefficients")
 ```
 
 ```{r}
@@ -107,5 +113,201 @@ value <- c(l1,l2,l3,l4)
 lambda_best_df <- cbind(lambda, value)
 lambda_best_df <- as.data.frame(lambda_best_df)
 lambda_best_df
+
+fit <- glmnet(x4, y, lambda = 0.02)
+predict(fit, s = 0.02, type = "coefficients")
 ```
 
+```{r}
+soft_threshold <- function(beta, lambda) {
+    sign(beta) * max(abs(beta) - lambda, 0)
+}
+
+getP <- function(X, betavec){
+    Px <- 1/(1 + exp(-(X %*% betavec)))
+    return(Px)
+}
+
+getW <- function(Px){
+    W <- Px*(1-Px)
+    return(Px)
+}
+
+getZ <- function(X, y, betavec, Px, W){
+    Z <- X %*% betavec + (y - Px)/W
+    return(Z)
+}
+
+
+lassoCD <- function(
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
+){
+    betavec <- init_beta
+    N <- length(y)
+    i <- 0
+    loss <- 1e5
+    prevloss <- Inf
+    res <- c(0, loss, betavec)
+    cont <- TRUE
+    while(i <= max_iter && cont){
+        i <- i + 1
+        prevloss <- loss
+        for(j in 1:length(betavec)){
+            Px <- getP(X, betavec)
+            W <- getW(Px)
+            W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
+            Z <- getZ(X, y, betavec, Px, W)
+            betaresj <- betavec
+            betaresj[j] <- 0
+            Zresj <- X %*% betaresj
+            betaj <- 
+                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/mean(W * X[,j] * X[,j])
+            betavec[j] <- betaj
+            loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
+        }
+        print(loss)
+        if(abs(prevloss - loss) < tol || loss > Inf){
+            cont <- FALSE
+        }
+        res <- rbind(res, c(i, loss, betavec))
+    }
+    return(res)
+}
+##### 5-fold cross-validation to choose beta lambda
+cvresult <- function(X,y,data,grid,K){
+  n <- dim(X)[1]
+  folds <- crossv_kfold(data, k = 5)
+  start <- rep(0, dim(X)[2])#n cols(n x's)
+  cv.error <- vector()
+  cv.se <- vector()
+  for (i in 1:length(grid)) {
+  cv.errors <- vector()
+  for (x in 1:K){
+    cor.result <- lassoCD(X[folds!=x,], y[folds!=x], init_beta = start, lambda = grid[i], max_iter = 1e3, tol = 1e-5)
+    lasbeta <- cor.result[nrow(cor.result),3:dim(cor.result)[2]]
+    u <- as.matrix(X[folds == x,]) %*% lasbeta
+    expu <- exp(u) 
+    prob <- expu / (1 + expu) 
+    y <- as.vector(y[folds==x])
+    cv.errors[x] = mean((y-prob)^2) 
+  }
+  start <- lasbeta
+  cv.error[i] <- mean(cv.errors)
+  cv.se[i] <- sqrt(var(cv.errors)/K)
+  }
+  return(cbind(grid,cv.error,cv.se))
+}
+  data = cancer[,2:33]
+  data.cancer = data.matrix(cancer[,3:33])
+  cvresult(data.cancer,cancer$diagnosis,grid=exp(seq(-1,-10, length=100)),K=5) 
+
+  lassoCD(data.cancer, cancer$diagnosis, init_beta = c(rep(0,31)), lambda = 0.5)
+  
+  grid=exp(seq(-1,-10, length=100))
+  length(grid)
+```
+
+
+```{r}
+### regulized logistic regression: middle loop and inner loop
+sfun <- function(beta,lambda) sign(beta) * max(abs(beta)-lambda, 0)
+reglogitlasso <- function(lambda, X,y, start, tol=1e-10, maxiter = 200,...){
+  p <- dim(X)[2]
+  n <- length(y)
+  betavec <- start
+  i <- 0 
+  loglik <- 0
+  prevloglik <- Inf 
+  res <- c(0, loglik, betavec)
+  while (i < maxiter && abs(loglik - prevloglik) > tol && loglik < Inf) {
+    i <- i + 1 
+    prevloglik <- loglik
+    for (j in 1:p) {
+      u <- X %*% betavec
+      expu <- exp(u) 
+      prob <- expu/(expu+1)
+      w <- prob*(1-prob) 
+      w <- ifelse(abs(w-0) < 1e-5, 1e-5, w)
+      z <- u + (y-prob)/w
+      znoj <- X[,-j] %*% betavec[-j]
+      betavec[j] <- sfun(mean(w*(X[,j])*(z - znoj)), lambda)/(mean(w*X[,j]*X[,j]))
+    }
+    loglik <- sum(w*(z-X %*% betavec)^2)/(2*n) + lambda * sum(abs(betavec))
+    res <- rbind(res, c(i, loglik, betavec))}  
+  return(res)
+}
+# intial = rep(0, dim(dat$X)[2])
+# corres <- 
+reglogitlasso(lambda = exp(-10), cancer[,3:12],cancer[,2] start = rep(3,10),tol=1e-5) 
+# start from -1 to -10
+```
+
+```{r}
+path <- function(x, y, grid){
+  betas <- NULL
+  for (i in 1:length(grid)){
+    cor.result <- lassoCD(x, y, lambda = grid[i], init_beta = rep(3, dim(x)[2]), max_iter = 1e3, tol = 1e-5)
+    lasbeta <- cor.result[nrow(cor.result),3:dim(cor.result)[2]]
+    start <- lasbeta
+    betas <- rbind(betas,c(lasbeta))
+  }
+  return(data.frame(cbind(grid,betas)))
+}
+path1 = path(x1, y, grid=exp(seq(-1,-10, length=100)))
+```
+
+```{r}
+library(tidyverse)
+library(glmnet)
+library(modelr)
+library(caret)
+```
+
+```{r data, message = FALSE }
+standardize = function(col) {
+  mean = mean(col)
+  stdev = sd(col)
+  return((col - mean)/stdev)
+}
+
+# just standardize the covariates
+standardized.data = read.csv(file = "breast-cancer.csv") %>% 
+  dplyr::select(radius_mean:fractal_dimension_worst) %>% 
+  map_df(.x = ., standardize)
+
+# add back in the response and ids
+data = cbind(read.csv(file = "breast-cancer.csv") %>% dplyr::select(diagnosis), standardized.data) %>% 
+  mutate(diagnosis = ifelse(diagnosis == "M", 1, 0))
+```
+
+```{r 5-fold-cv }
+
+set.seed(8160)
+# lambdas to cross-validate against
+lambda.seq = exp(seq(-1,-10, length=100))
+avg.rmses = NULL
+
+# Set up the datasets for cross-validation
+k=5
+folds = crossv_kfold(data, k)
+train.idx = folds[k,1][[1]][[toString(k)]]$idx
+train = data[train.idx,]
+train.X = train %>% dplyr::select(radius_mean:fractal_dimension_worst)
+train.y = train$diagnosis
+test = data[-train.idx,]
+test.X = test %>% dplyr::select(radius_mean:fractal_dimension_worst)
+test.y = test$diagnosis
+lassoCD(X = as.matrix(train.X), y = train.y, lambda = l, init_beta = c(rep(0, 30)), max_iter = 1e3, tol = 1e-5)
+
+for (l in lambda.seq) {
+  rmses = NULL
+  for (k in 1:nrow(folds)) {
+    LogLASSO = lassoCD(X = as.matrix(train.X), y = train.y, lambda = l, init_beta = c(rep(0, dim(train.X)[2])), max_iter = 1e3, tol = 1e-5)
+    LL.coefs = LogLASSO[,3:32]
+    rmse = sum(sqrt((test.y - as.matrix(test.X) %*% LL.coefs)^2))
+    rmses = cbind(rmses, rmse)
+  }
+  avg.rmses = cbind(avg.rmses, mean(rmses))
+  print(paste("iter: lambda = ", l, "done"))
+}
+```
