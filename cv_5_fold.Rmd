@@ -32,6 +32,9 @@ standardized.data = read.csv(file = "breast-cancer.csv") %>%
 # add back in the response and ids
 data = cbind(read.csv(file = "breast-cancer.csv") %>% dplyr::select(diagnosis), standardized.data) %>% 
   mutate(diagnosis = ifelse(diagnosis == "M", 1, 0))
+
+data2 = read.csv(file = "breast-cancer.csv") %>% 
+  mutate(diagnosis = ifelse(diagnosis == "M", 1, 0))
 ```
 
 ## lassocd
@@ -57,7 +60,7 @@ getZ <- function(X, y, betavec, Px, W){
 
 
 lassoCD <- function(
-        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
+        X, y, lambda, init_beta, max_iter = 1e4, tol = 1e-8
 ){
     betavec <- init_beta
     N <- length(y)
@@ -90,37 +93,77 @@ lassoCD <- function(
     }
     return(res)
 }
+
+x1 = data2[1:50, 3:32]
+y1 = data2[1:50, 2]
+lassoCD(as.matrix(x1), y1, 0.5, c(rep(3, 30)), max_iter = 1e4, tol = 1e-8)
 ```
 
-
-
-```{r 5-fold-cv }
-set.seed(8160)
-# lambdas to cross-validate against
-lambda.seq = exp(seq(-1,-10, length=100))
-avg.rmses = NULL
-
-# Set up the datasets for cross-validation
-k=5
-folds = crossv_kfold(data, k)
-train.idx = folds[k,1][[1]][[toString(k)]]$idx
-train = data[train.idx,]
-train.X = train %>% dplyr::select(radius_mean:fractal_dimension_worst)
-train.y = train$diagnosis
-test = data[-train.idx,]
-test.X = test %>% dplyr::select(radius_mean:fractal_dimension_worst)
-test.y = test$diagnosis
-lassoCD(X = as.matrix(train.X), y = train.y, lambda = l, init_beta = c(rep(0, 30)), max_iter = 1e3, tol = 1e-5)
-
-for (l in lambda.seq) {
-  rmses = NULL
-  for (k in 1:nrow(folds)) {
-    LogLASSO = lassoCD(X = as.matrix(train.X), y = train.y, lambda = l, init_beta = c(rep(0, dim(train.X)[2])), max_iter = 1e3, tol = 1e-5)
-    LL.coefs = LogLASSO[,3:32]
-    rmse = sum(sqrt((test.y - as.matrix(test.X) %*% t(LL.coefs))^2))
-    rmses = cbind(rmses, rmse)
+```{r}
+lambda.cv = function(lambdas, data, k) {
+  set.seed(2022)
+  folds = crossv_kfold(data, k = k)
+  path = NULL
+  i = 0
+  for (l in lambdas) {
+    fold.mses = NULL
+    fold.ses = NULL
+    i = i + 1
+    
+    for (k in 1:nrow(folds)) {
+      trainrow= folds[k,1][[1]][[toString(k)]]$idx
+      testrow = folds[k,2][[1]][[toString(k)]]$idx
+      
+      train.X = data[trainrow,] %>% dplyr::select(radius_mean:fractal_dimension_worst)
+      train.X = cbind(rep(1,dim(train.X)[1]),train.X)
+      test.X = data[testrow,] %>% dplyr::select(radius_mean:fractal_dimension_worst)
+      test.X = cbind(rep(1,dim(test.X)[1]),test.X)
+      
+      train.y = data[trainrow,] %>% dplyr::select(diagnosis)
+      test.y = data[testrow,] %>% dplyr::select(diagnosis)
+      
+      # Perform the logistic-LASSO
+      fit = lassoCD(X = as.matrix(train.X), y = train.y, lambda = l, init_beta = c(rep(2, dim(train.X)[2])), max_iter = 1e4, tol = 1e-8)
+      LL.coefs = fit[,2:32]
+      u = exp(as.matrix(test.X) %*% t(LL.coefs))
+      z = u / (1 + u)
+      # Calculate the test MSE for the fold
+      fold.mse = mean((test.y - z)^2)
+      fold.mses = c(fold.mses, fold.mse)
+      }
+    fold.se = sqrt(var(fold.mses)/5)
+    path = rbind(path,
+                 c(lambda = l, log.lambda = log(l),
+                   avg.fold.mse = mean(fold.mses), avg.fold.se = fold.se))
+    print(paste("Iteration:", i, "done"))
+    }
+  return(as.tibble(path))
   }
-  avg.rmses = cbind(avg.rmses, mean(rmses))
-  print(paste("iter: lambda = ", l, "done"))
-}
+
+lambda.seq = exp(seq(-1,-10, length=100))
+
+cv.path = lambda.cv(lambda.seq, data2, 5)
+min.mse = min(cv.path$avg.fold.mse)
+min.lambda = cv.path[which(cv.path$avg.fold.mse == min.mse),]$log.lambda
+
+cv.path %>%
+  ggplot(data = ., aes(x = log.lambda, y = avg.fold.mse)) +
+  geom_vline(xintercept = min.lambda) +
+  geom_line(color = "red") +
+  geom_errorbar(aes(ymin = avg.fold.mse - avg.fold.se, ymax = avg.fold.mse +
+                      avg.fold.se), color = "gray50") +
+  labs(
+    title = "Average Test Fold MSE as a function of lambda",
+    x = "log(lambda)",
+    y = "Average Test MSE"
+    ) +
+  theme(plot.title = element_text(hjust = 0.5))
 ```
+
+## 5-Fold Cross Validation
+
+In order to find the optimal lambda, we use 5-fold cross validation. The dataset is divided into five subdatasets by using the *crossv_kfold* function. We combined 4 of them as the training data set, and the rest $\frac{1}{5}$ of them as the test data set. The optimal coefficients is then found five times by running the logit-LASSO on the training data set, leaving a different subset out each time. The subset left out is then used to estimate the model performance. This is done for all lambdas in the pre-defined sequence in order to search for the lambda with the highest average predictive ability. 
+We use RMSE as the criteria to choose the best tuning parameter and corresponding model obtained from train data, and calculating RMSE to evaluate the model performance in test dataset.
+$$RMSE = \sqrt{(test.y - predict.y)^2}$$
+
+As a result, we got the best $\lambda$ is about 0 after the 5-fold cross validation.
