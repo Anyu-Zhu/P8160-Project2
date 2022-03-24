@@ -33,8 +33,12 @@ standardized.data = read.csv(file = "breast-cancer.csv") %>%
 data = cbind(read.csv(file = "breast-cancer.csv") %>% dplyr::select(diagnosis), standardized.data) %>% 
   mutate(diagnosis = ifelse(diagnosis == "M", 1, 0))
 
-data2 = read.csv(file = "breast-cancer.csv") %>% 
-  mutate(diagnosis = ifelse(diagnosis == "M", 1, 0))
+cancer = read.csv("breast-cancer.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
+  select(-id)
+y = as.matrix(cancer$diagnosis)
+x = scale(as.matrix(cancer[, 2:31]))
 ```
 
 ## lassocd
@@ -85,8 +89,8 @@ lassoCD <- function(
             betavec[j] <- betaj
             loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
         }
-        print(loss)
-        if(abs(prevloss - loss) < tol || loss > Inf){
+        #print(loss)
+        if(abs(prevloss - loss) < tol || loss < Inf){
             cont <- FALSE
         }
         res <- rbind(res, c(i, loss, betavec))
@@ -94,70 +98,98 @@ lassoCD <- function(
     return(res)
 }
 
-x1 = data2[1:50, 3:32]
-y1 = data2[1:50, 2]
-lassoCD(as.matrix(x1), y1, 0.5, c(rep(3, 30)), max_iter = 1e4, tol = 1e-8)
+# x1 = data2[1:50, 3:32]
+# y1 = data2[1:50, 2]
+# lassoCD(as.matrix(x1), y1, 0.5, c(rep(3, 30)), max_iter = 1e4, tol = 1e-8)
+
+coordinatelasso <- function(lambda, dat, s, tol=1e-10, maxiter = 200){
+    i <- 0 
+    pp <- length(s)
+    n <- length(dat$y)
+    betavec <- s
+    loglik <- 1e6
+    res <- c(0, loglik, betavec)
+    prevloglik <- Inf # To make sure it iterates 
+    while (i < maxiter && abs(loglik - prevloglik) > tol && loglik < inf) {
+        i <- i + 1 
+        prevloglik <- loglik
+        for (j in 1:pp) {
+            u <- dat$X %*% betavec
+            expu <- exp(u) 
+            prob <- expu/(expu+1)
+            w <- prob*(1-prob) # weighted
+            # avoid coeffcients diverging in order to achieve fitted  probabilities of 0 or 1.
+            w <- ifelse(abs(w-0) < 1e-5, 1e-5, w)
+            z <- u + (dat$y-prob)/w
+            # calculate noj
+            znoj <- dat$X[,-j] %*% betavec[-j]
+            # revise the formula to be z
+            betavec[j] <- soft_threshold(mean(w*(dat$X[,j])*(z - znoj)), lambda)/(mean(w*dat$X[,j]*dat$X[,j]))
+        }
+        loglik <- sum(w*(z-dat$X %*% betavec)^2)/(2*n) + lambda * sum(abs(betavec))
+        res <- rbind(res, c(i, loglik, betavec))}  
+    return(res)
+}
 ```
 
 ```{r}
-lambda.cv = function(lambdas, data, k) {
-  set.seed(2022)
+lambda.cv = function(lambdas, x, y, k) {
+  data = as.data.frame(cbind(x, y))
   folds = crossv_kfold(data, k = k)
-  path = NULL
-  i = 0
-  for (l in lambdas) {
-    fold.mses = NULL
-    fold.ses = NULL
-    i = i + 1
-    
-    for (k in 1:nrow(folds)) {
-      trainrow= folds[k,1][[1]][[toString(k)]]$idx
-      testrow = folds[k,2][[1]][[toString(k)]]$idx
+  
+  start = rep(0, 31)
+  fold.mse <- vector()
+  fold.se <- vector()
+
+  for (j in 1:length(lambdas)) {
+    fold.errors <- vector()
+    for (i in 1:k) {
+      trainrow= folds[i,1][[1]][[toString(i)]]$idx
+      testrow = folds[i,2][[1]][[toString(i)]]$idx
       
-      train.X = data[trainrow,] %>% dplyr::select(radius_mean:fractal_dimension_worst)
+      train.X = x[trainrow,] 
       train.X = cbind(rep(1,dim(train.X)[1]),train.X)
-      test.X = data[testrow,] %>% dplyr::select(radius_mean:fractal_dimension_worst)
+      test.X = x[testrow,] 
       test.X = cbind(rep(1,dim(test.X)[1]),test.X)
       
-      train.y = data[trainrow,] %>% dplyr::select(diagnosis)
-      test.y = data[testrow,] %>% dplyr::select(diagnosis)
+      train.y = y[trainrow,] 
+      test.y = y[testrow,] 
       
       # Perform the logistic-LASSO
-      fit = lassoCD(X = as.matrix(train.X), y = train.y, lambda = l, init_beta = c(rep(2, dim(train.X)[2])), max_iter = 1e4, tol = 1e-8)
-      LL.coefs = fit[,2:32]
-      u = exp(as.matrix(test.X) %*% t(LL.coefs))
-      z = u / (1 + u)
+      fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
+      betas = fit[nrow(fit),2:32]
+      u = test.X %*% betas
+      expu = exp(u)
+      prob = expu / (1 + expu)
       # Calculate the test MSE for the fold
-      fold.mse = mean((test.y - z)^2)
-      fold.mses = c(fold.mses, fold.mse)
-      }
-    fold.se = sqrt(var(fold.mses)/5)
-    path = rbind(path,
-                 c(lambda = l, log.lambda = log(l),
-                   avg.fold.mse = mean(fold.mses), avg.fold.se = fold.se))
-    print(paste("Iteration:", i, "done"))
+      fold.errors[i] = mean((test.y - prob)^2)
     }
-  return(as.tibble(path))
+    start = betas
+    fold.mse[j] = mean(fold.errors)
+    fold.se[j] = sqrt(var(fold.errors)/k)
   }
+  return(cbind(log.lambda = log(lambdas), fold.mse, fold.se))
+}
 
 lambda.seq = exp(seq(-1,-10, length=100))
 
-cv.path = lambda.cv(lambda.seq, data2, 5)
-min.mse = min(cv.path$avg.fold.mse)
-min.lambda = cv.path[which(cv.path$avg.fold.mse == min.mse),]$log.lambda
+cv.path = lambda.cv(lambda.seq, x, y, 5)
+cv.path = as.data.frame(cv.path)
+min.mse = min(cv.path$fold.mse)
+min.lambda = cv.path[which(cv.path$fold.mse == min.mse),]$log.lambda
 
 cv.path %>%
-  ggplot(data = ., aes(x = log.lambda, y = avg.fold.mse)) +
+  ggplot(data = ., aes(x = log.lambda, y = fold.mse)) +
   geom_vline(xintercept = min.lambda) +
   geom_line(color = "red") +
-  geom_errorbar(aes(ymin = avg.fold.mse - avg.fold.se, ymax = avg.fold.mse +
-                      avg.fold.se), color = "gray50") +
+  geom_errorbar(aes(ymin = fold.mse - fold.se, ymax = fold.mse + 
+                      fold.se), color = "gray50") +
   labs(
-    title = "Average Test Fold MSE as a function of lambda",
-    x = "log(lambda)",
-    y = "Average Test MSE"
-    ) +
-  theme(plot.title = element_text(hjust = 0.5))
+   title = "Average Test Fold MSE as a function of lambda",
+   x = "log(lambda)",
+   y = "Average Test MSE"
+   ) +
+ theme(plot.title = element_text(hjust = 0.5))
 ```
 
 ## 5-Fold Cross Validation
