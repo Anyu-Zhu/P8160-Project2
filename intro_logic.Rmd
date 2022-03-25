@@ -1,0 +1,66 @@
+---
+title: "Intro_logistic"
+author: "Anyu Zhu"
+date: "3/24/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(caret)
+library(corrplot)
+```
+
+```{r}
+cancer = read.csv("breast-cancer.csv") %>% 
+  mutate(diagnosis = factor(diagnosis))
+
+n_obs = nrow(cancer)
+n_var = ncol(cancer)
+n_m = sum(cancer$diagnosis == "M")
+n_b = n_obs - n_m
+```
+
+
+## Introduction
+
+### Objective
+The goal of the project is to build a predictive model based on logistic regression to facilitate cancer diagnosis.
+
+### Dataset
+The dataset 'breast-cancer'we used contains 569 rows and 32 columns. The variable `diagnosis` identifies if the image is coming from cancer tissue or benign. We labeled `malignant` as 1 and `benign` as 0. In total there are 212 malignant cases and 357 benign cases. There are 30 variables corresponding to mean, standard deviation and the largest values (points on the tails) of the distributions of 10 features: radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, and fractal dimension.
+
+The distribution of mean value of the 10 features among malignant cases and benign cases is shown in the plot below (Figure 1).
+
+```{r}
+featurePlot(x = cancer[, 3:12],
+            y = cancer$diagnosis,
+            par.strip.text=list(cex=0.7),
+            scales = list(x = list(relation = "free", font = 0.8),
+                          y = list(relation = "free"), font = 0.8),
+            plot = "density", pch = "|", adjust = 1.5,
+            auto.key = list(columns = 2))
+```
+
+Figure 2 displays the correlation between variables. We can see there exists multicollinearity in the dataset. (?? Put this into discussion ??)
+
+```{r}
+cancer_numeric = cancer[, 3:32]
+corrplot(cor(cancer_numeric), tl.col = "blue", tl.cex = 0.5, 
+         title = "Figure 2: Correlation Plot", mar=c(0,0,1,0))
+```
+
+
+## Method
+
+## Logistic Model
+
+```{r}
+cancer = cancer %>% 
+  janitor::clean_names() %>% 
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1)  %>% 
+  select(-id)
+```
+
