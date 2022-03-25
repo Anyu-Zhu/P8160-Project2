@@ -171,7 +171,7 @@ lambda.cv = function(lambdas, x, y, k) {
   return(cbind(log.lambda = log(lambdas), fold.mse, fold.se))
 }
 
-lambda.seq = exp(seq(-1,-10, length=100))
+lambda.seq = exp(seq(-2,-5, length=100))
 
 cv.path = lambda.cv(lambda.seq, x, y, 5)
 cv.path = as.data.frame(cv.path)
@@ -190,6 +190,8 @@ cv.path %>%
    y = "Average Test MSE"
    ) +
  theme(plot.title = element_text(hjust = 0.5))
+
+exp(min.lambda)
 ```
 
 ## 5-Fold Cross Validation
@@ -198,4 +200,4 @@ In order to find the optimal lambda, we use 5-fold cross validation. The dataset
 We use RMSE as the criteria to choose the best tuning parameter and corresponding model obtained from train data, and calculating RMSE to evaluate the model performance in test dataset.
 $$RMSE = \sqrt{(test.y - predict.y)^2}$$
 
-As a result, we got the best $\lambda$ is about 0 after the 5-fold cross validation.
+After the 5-fold cross validation, we found that the best lambda is about $e^{-3.232} = 0.0391$ in the optimal model. 
