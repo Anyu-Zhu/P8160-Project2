@@ -8,6 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 library(tidyverse)
+library(ggplot2)
 ```
 
 
@@ -21,9 +22,8 @@ cancer = read.csv("breast-cancer.csv") %>%
 
 ```{r}
 y = as.matrix(cancer$diagnosis)
-x1 = scale(as.matrix(cancer[, 2:11])) # Here I add scale() to avoid float number overflow
-x2 = scale(as.matrix(cancer[, 2:21]))
-x3 = scale(as.matrix(cancer[, 2:31]))
+# Here I add scale() to avoid float number overflow
+x = scale(as.matrix(cancer[, 2:31]))
 
 logisticstuff <- function(x, y , betavec) {
 
@@ -43,9 +43,7 @@ logisticstuff <- function(x, y , betavec) {
   return(list(loglik = loglik, grad = grad, Hess = Hess))
 }
 
-logisticstuff(x1, y, rep(2, 11))
-logisticstuff(x2, y, rep(2, 21))
-logisticstuff(x3, y, rep(2, 31))
+logisticstuff(x, y, rep(2, 31))
 ```
 
 
@@ -87,30 +85,14 @@ NewtonRaphson <- function(x, y, func, start, tol=1e-10, maxiter = 1000) {
   return(res)
 }
 
-nr1 = NewtonRaphson(x1, y, logisticstuff, rep(2,11))
-nr1
-nr2 = NewtonRaphson(x2, y, logisticstuff, rep(1,21))
-nr3 = NewtonRaphson(x3, y, logisticstuff, rep(1,31))
+nr = NewtonRaphson(x, y, logisticstuff, rep(1,31))
 ```
 
 
 ```{r}
-library(ggplot2)
-ans = data.frame(nr1)
+ans = data.frame(nr)
 colnames(ans) = c("iteration", "log likelihood")
 ggplot(ans, aes(x = iteration, y = `log likelihood`)) +
-  geom_point(size = 0.5) +
-  geom_line()
-
-ans2 = data.frame(nr2)
-colnames(ans2) = c("iteration", "log likelihood")
-ggplot(ans2, aes(x = iteration, y = `log likelihood`)) +
-  geom_point(size = 0.5) +
-  geom_line()
-
-ans3 = data.frame(nr3)
-colnames(ans2) = c("iteration", "log likelihood")
-ggplot(ans2, aes(x = iteration, y = `log likelihood`)) +
   geom_point(size = 0.5) +
   geom_line()
 ```
