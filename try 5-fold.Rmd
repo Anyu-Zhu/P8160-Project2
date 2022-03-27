@@ -1,10 +1,9 @@
 ---
-title: "5-fold cv"
-author: "Yijing Tao"
-date: "3/24/2022"
+title: "try 5-fold"
+author: "Yijing Tao yt2785"
+date: '2022-03-27'
 output: html_document
 ---
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
@@ -13,6 +12,8 @@ library(glmnet)
 library(pdp)
 library(caret)
 library(modelr)
+library(pROC)
+library(stats)
 ```
 
 ## data preprocessing
@@ -34,9 +35,8 @@ data = cbind(read.csv(file = "breast-cancer.csv") %>% dplyr::select(diagnosis), 
   mutate(diagnosis = ifelse(diagnosis == "M", 1, 0))
 
 cancer = read.csv("breast-cancer.csv") %>% 
-  janitor::clean_names() %>% 
-  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
-  select(-id)
+    mutate(diagnosis = factor(diagnosis))
+  
 y = as.matrix(cancer$diagnosis)
 x = scale(as.matrix(cancer[, 2:31]))
 ```
@@ -124,12 +124,39 @@ coordinatelasso <- function(lambda, dat, s, tol=1e-10, maxiter = 200){
             # calculate noj
             znoj <- dat$X[,-j] %*% betavec[-j]
             # revise the formula to be z
-            betavec[j] <- soft_threshold(mean(w*(dat$X[,j])*(z - znoj)), lambda)/(mean(w*dat$X[,j]*dat$X[,j]))
+            betavec[j] <- soft_threshold(mean(w*(dat$X[,j])*(z - znoj)), lambda)/(sum(w*dat$X[,j]*dat$X[,j]))
         }
         loglik <- sum(w*(z-dat$X %*% betavec)^2)/(2*n) + lambda * sum(abs(betavec))
         res <- rbind(res, c(i, loglik, betavec))}  
     return(res)
 }
+
+lassoCD.predict <- function(betavec, X_new, y){
+    Py <- 1/(1 + exp(-(X_new %*% betavec)))
+    Pn <- 1-Py
+    res <- list(P_pos = Py, P_neg = Pn, res = Py > Pn)
+    res$res = as.numeric(res$res)
+    return(res)
+}
+
+set.seed(1)
+rowTrain <- createDataPartition(y = y,
+                                p = 0.7,
+                                list = FALSE)
+cancer$diagnosis = case_when(cancer$diagnosis == "M" ~ 1,
+                             TRUE ~ 0)
+trainx <- x[rowTrain,]
+trainx = cbind(rep(1,dim(trainx)[1]),trainx)
+trainy <- cancer$diagnosis[rowTrain,]
+testx <- x[-rowTrain,]
+testx = cbind(rep(1,dim(testx)[1]),testx)
+testy <- cancer$diagnosis[-rowTrain,]
+      fit = lassoCD(trainx, trainy, lambda = 0.5, init_beta = rep(0, 31))
+      betas = fit[nrow(fit),2:32]
+      pred.cd <- lassoCD.predict(betas, testx, testy)
+      pred.obs <- data.frame(pred = pred.cd$res, obs = testy)
+      roc <- roc(pred.obs$pred, pred.obs$obs)
+      auc <- roc$auc[1]
 ```
 
 ```{r}
@@ -149,9 +176,9 @@ lambda.cv = function(lambdas, x, y, k, seed) {
       testrow = folds[i,2][[1]][[toString(i)]]$idx
       
       train.X = x[trainrow,] 
-      train.X = cbind(rep(1,dim(train.X)[1]),train.X)
-      test.X = x[testrow,] 
-      test.X = cbind(rep(1,dim(test.X)[1]),test.X)
+      train.X = scale(as.matrix(cbind(rep(1,dim(train.X)[1]),train.X)))
+      test.X = x[testrow,]  
+      test.X = scale(as.matrix(cbind(rep(1,dim(test.X)[1]),test.X)))
       
       train.y = y[trainrow,] 
       test.y = y[testrow,] 
@@ -159,42 +186,39 @@ lambda.cv = function(lambdas, x, y, k, seed) {
       # Perform the logistic-LASSO
       fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
       betas = fit[nrow(fit),2:32]
-      u = test.X %*% betas
-      expu = exp(u)
-      prob = expu / (1 + expu)
-      # Calculate the test MSE for the fold
-      fold.errors[i] = mean((test.y - prob)^2)
+      pred.cd <- lassoCD.predict(betas, test.X, test.y)
+      pred.obs <- data.frame(pred = pred.cd$res, obs = cancer$diagnosis[testrow,])
+      roc <- roc(pred.obs$pred, pred.obs$obs)
+      roc <- roc(test.y, pred)
     }
     start = betas
-    fold.mse[j] = mean(fold.errors)
-    fold.se[j] = sqrt(var(fold.errors)/k)
+    auc[j] <- roc$auc[1]
   }
-  return(cbind(log.lambda = log(lambdas), fold.mse, fold.se))
+  return(cbind(log.lambda = log(lambdas), auc))
 }
 
 lambda.seq = exp(seq(-2,-5, length=100))
 
-cv.path = lambda.cv(lambda.seq, x, y, 5, 2022)
+cv.path = lambda.cv(lambda.seq, cancer[,3:32], cancer$diagnosis, 5, 2022)
 cv.path = as.data.frame(cv.path)
-min.mse = min(cv.path$fold.mse)
-min.lambda = cv.path[which(cv.path$fold.mse == min.mse),]$log.lambda
+max.auc = max(cv.path$auc)
+max.lambda = cv.path[which(cv.path$auc == max.auc),]$log.lambda
 
-cv.path %>%
-  ggplot(data = ., aes(x = log.lambda, y = fold.mse)) +
-  geom_vline(xintercept = min.lambda) +
-  geom_line(color = "red") +
-  geom_errorbar(aes(ymin = fold.mse - fold.se, ymax = fold.mse + 
-                      fold.se), color = "gray50") +
-  labs(
-   title = "Average Test Fold MSE as a function of lambda",
-   x = "log(lambda)",
-   y = "Average Test MSE"
-   ) +
- theme(plot.title = element_text(hjust = 0.5))
+#cv.path %>%
+#  ggplot(data = ., aes(x = log.lambda, y = auc)) +
+#  geom_vline(xintercept = max.lambda) +
+#  geom_line(color = "red") +
+#  geom_errorbar(aes(ymin = fold.mse - fold.se, ymax = fold.mse + 
+#                      fold.se), color = "gray50") +
+#  labs(
+#   title = "Average Test Fold MSE as a function of lambda",
+#   x = "log(lambda)",
+#   y = "Average Test MSE"
+#   ) +
+# theme(plot.title = element_text(hjust = 0.5))
 
-exp(min.lambda)
+exp(max.lambda)
 ```
-
 ## 5-Fold Cross Validation
 The test data is taken from the same data, but is not involved in the training, so that the model can be evaluated relatively objectively to match the data outside the training set. The evaluation of the model in the test data is commonly done by cross-validation. It divides the original data into K groups (K-Fold), and makes each subset of data into a test set separately, and the rest of the K-1 subset data as the training set, so that K models will be obtained. These K models are evaluated separately in the test set, and the final error MSE (Mean Squared Error) is summed and averaged to obtain the cross-validation error.
 
@@ -204,4 +228,3 @@ In order to find the optimal lambda, we use 5-fold cross validation. The dataset
 We use MSE as the criteria to choose the best tuning parameter and corresponding model obtained from train data, and calculating MSE to evaluate the model performance in test dataset.
 
 After the 5-fold cross validation, we found that the best lambda is about $e^{-3.5152} = 0.0297$ in the optimal model when set.seed(2022). 
-
