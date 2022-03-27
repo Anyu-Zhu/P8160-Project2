@@ -75,6 +75,45 @@ lassoCD <- function(
 }
 
 ```
+\newpage
+```{r eval=FALSE, tidy=FALSE}
+# define soft_threshold, getP, getW, getZ
+
+lassoCD <- function(
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 500, tol = 1e-8
+){
+    betavec <- init_beta
+    N <- length(y)
+    i <- 0
+    loss <- 1e5
+    prevloss <- Inf
+    res <- c(0, loss, betavec)
+    cont <- TRUE
+    while(i <= max_iter && cont){
+        i <- i + 1
+        prevloss <- loss
+        for(j in 1:length(betavec)){
+            Z <- getZ(X, y, betavec, Px, W)
+            # setting beta_j to 0
+            betaresj <- betavec
+            betaresj[j] <- 0
+            Zresj <- getZ(X, y, betaresj, Presj, Wresj)
+            # update beta_j by solving penalized weighted least-square
+            betaj <- soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
+            betavec[j] <- betaj
+            loss <- (1/(2*N))*sum(W * (Z - Zresj)^2) + lambda * sum(abs(betavec))
+        }
+        # convergency
+        if(abs(prevloss - loss) < tol || loss > Inf){
+            cont <- FALSE
+        }
+        res <- rbind(res, c(i, loss, betavec))
+    }
+    return(res)
+}
+```
+
+
 
 ```{r CD_lasso_mtx}
 ## matrix version ##
@@ -216,24 +255,24 @@ cvresult <- function(X, y, grid, K){
 ```
 
 ```{r}
-library(glmnet)
-library(caret)
-
-ctrl <- trainControl(method = "cv",
-                     summaryFunction = twoClassSummary,
-                     classProbs = TRUE)
-glmnGrid <- expand.grid(alpha = 1, lambda = exp(seq(2,-10, length = 100)))
-model.glmn <- train(x = scale(data.cancer),
-                   y = as.factor(ifelse(cancer$diagnosis == 1, "pos", "neg")),
-                   method = "glmnet",
-                   tuneGrid = glmnGrid,
-                   metric = "ROC",
-                   trControl = ctrl)
-model.glmn$bestTune
-glmn.coef = coef(model.glmn$finalModel)
-
-model.glmnet = glmnet(scale(data.cancer), cancer$diagnosis, family = "binomial", lambda = 0.280, intercept = FALSE)
-predict.glmnet(model.glmnet , s = 0.280, type = "coefficient")
+#library(glmnet)
+#library(caret)
+#
+#ctrl <- trainControl(method = "cv",
+#                     summaryFunction = twoClassSummary,
+#                     classProbs = TRUE)
+#glmnGrid <- expand.grid(alpha = 1, lambda = exp(seq(2,-10, length = 100)))
+#model.glmn <- train(x = scale(data.cancer),
+#                   y = as.factor(ifelse(cancer$diagnosis == 1, "pos", "neg")),
+#                   method = "glmnet",
+#                   tuneGrid = glmnGrid,
+#                   metric = "ROC",
+#                   trControl = ctrl)
+#model.glmn$bestTune
+#glmn.coef = coef(model.glmn$finalModel)
+#
+#model.glmnet = glmnet(scale(data.cancer), cancer$diagnosis, family = "binomial", lambda = 0.280, intercept = #FALSE)
+#predict.glmnet(model.glmnet , s = 0.280, type = "coefficient")
 ```
 
 
@@ -273,6 +312,12 @@ and $\tilde{p}(x_i)$ is evaluated at the current parameters, the last term is co
 
 The coordinate descent algorithm to solve the penalized weighted least squares problem 
 $$\min_{\beta \in \mathbb{R}^{p+1}} \{ -f(\beta) + \lambda P(\beta)\}$$
+And the lasso update is :
+
+$$
+\tilde{\beta}_j^{\text{lasso}} \leftarrow \frac{S(\frac{1}{n}\sum_{i=1}^{n}w_ix_{ij}(z_i - \tilde z_i^{(j)}),\lambda)}{\sum_{i=1}^{n}w_ix_{ij}^2}
+$$
+
 The above amounts to a sequence of nested loops:
 
 - outer loop: start with $\lambda$ that all the coefficients are forced to be zerp, then decrement $\lambda$;
