@@ -53,7 +53,10 @@ lassoCD <- function(
             Z <- getZ(X, y, betavec, Px, W)
             betaresj <- betavec
             betaresj[j] <- 0
-            Zresj <- X %*% betaresj
+            Presj <- getP(X, betaresj)
+            Wresj <- getW(Presj)
+            Wresj <- ifelse(abs(Wresj-0) < 1e-5, 1e-5, Wresj)
+            Zresj <- getZ(X, y, betaresj, Presj, Wresj)
             betaj <- 
                 soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
             betavec[j] <- betaj
@@ -87,7 +90,7 @@ lassoCD.matrix <- function(
         for(j in 1:length(betavec)){
             Px <- getP(X, betavec)
             W <- getW(Px)
-            W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
+            #W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
             Wdiag <- diag(c(W), N, N)
             Z <- getZ(X, y, betavec, Px, W)
             betaresj <- betavec
@@ -132,7 +135,7 @@ cancer$diagnosis = case_when(cancer$diagnosis == "M" ~ 1,
                              TRUE ~ 0)
 data.cancer = data.matrix(cancer[3:32])
 
-cancer.lassoCD <- lassoCD.matrix(scale(data.cancer), cancer$diagnosis, init_beta = c(rep(0,30)), lambda = 0.05)
+cancer.lassoCD <- lassoCD(scale(data.cancer), cancer$diagnosis, init_beta = c(rep(10,30)), lambda = 0.005)
 
 cancer.lassoCD.predict <- lassoCD.predict(cancer.lassoCD[2,3:32],scale(data.cancer), cancer$diagnosis)
 
@@ -149,5 +152,157 @@ library(pROC)
 roc(pred.obs$pred, pred.obs$obs)
 ```
 
+```{r}
+path <- function(X, y, lambdaseq){
+    init_beta <- rep(0, dim(X)[2])
+    betas <- NULL
+    for (i in 1:length(lambdaseq)) {
+        cd.result <- lassoCD(X, y, lambda = lambdaseq[i], init_beta = init_beta)
+        last_beta <- cd.result[nrow(cd.result),3:dim(cd.result)[2]]
+        init_beta <- last_beta
+        betas <- rbind(betas,c(last_beta))
+        i <- i+1
+    }
+    return(data.frame(cbind(lambdaseq,betas)))
+}
+path.out <- path(scale(data.cancer), cancer$diagnosis,lambdaseq = exp(seq(-8e-1,-8, length=100)))
+colnames(path.out) <- c("lambda",colnames(cancer)[3:32])
+# plot a path of solutions
+path.plot <- path.out %>%
+  gather(key = par, value = estimate, c(2:dim(path.out)[2])) %>% 
+  ggplot(aes(x = log(lambda), y = estimate, group = par, col = par)) +
+  geom_line()+
+  ggtitle("A path of solutions with a sequence of descending lambda's") +
+  xlab("log(Lambda)") + 
+  ylab("Estimate") +
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size = 6))
+path.plot
 
+```
+
+
+```{r}
+cvresult <- function(X, y, grid, K){
+  n <- dim(X)[1]
+  folds <- sample(1:K, n, replace=TRUE)
+  start <- rep(0, dim(X)[2])
+  cv.error <- vector()
+  cv.se <- vector()
+  for (x in 1:length(grid)) {
+  cv.errors <- vector()
+  for (i in 1:K){
+    cor.result <- coordinatelasso(lambda = grid[x], 
+                                  dat = list(X=as.matrix(inputx[folds!=i,]),y=inputy[folds!=i]),
+                                  s = start)
+    lasbeta <- cor.result[nrow(cor.result),3:dim(cor.result)[2]]
+    u <- as.matrix(inputx[folds == i,]) %*% lasbeta
+    expu <- exp(u) 
+    prob <- expu / (1 + expu) 
+    y <- as.vector(inputy[folds==i])
+    cv.errors[i] = mean((y-prob)^2) #MSE
+    start <- lasbeta
+  }
+  cv.error[x] <- mean(cv.errors)
+  cv.se[x] <- sqrt(var(cv.errors)/K)
+  }
+  return(cbind(grid,cv.error,cv.se))
+}
+```
+
+```{r}
+# logistic regression by GLM
+log.beta <- c(logit.beta[2:length(logit.beta)],logit.beta[1])
+pred <- predict(logfit.1)
+log.pred <- mean((resp-exp(pred)/(1+exp(pred)))^2) # abs(mean(logfit.1$residuals))
+# newton's method
+newton.ite <- nrow(newres)
+newton.beta <- newres[nrow(newres),3:dim(newres)[2]]
+newton.pred <- pred.fun(resp,newX,newton.beta)
+# gradient decent
+grad.ite <- nrow(gradres)
+grad.beta <- gradres[nrow(gradres),3:dim(gradres)[2]]
+grad.pred <- pred.fun(resp,newX,grad.beta)
+logmod.cv <- cv.glmnet(newdat$X[,-dim(newdat$X)[2]], y=newdat$y, alpha=1, family="binomial")
+best.lambda.func <- logmod$lambda.min
+logmod <- glmnet(newdat$X[,-dim(newdat$X)[2]], y=newdat$y, alpha=1, family="binomial",lambda = best.lambda.func)
+glmnet.beta <- c(coef.glmnet(logmod)[2:length(coef.glmnet(logmod))],coef.glmnet(logmod)[1])
+glmnet.pred <- predict(logmod,newdataX,type="response", lambda = best.lambda.func)
+glmnet.pred <- mean((resp-glmnet.pred)^2)
+# lasso logistic
+lasso.ite <- nrow(finlasso)
+lasso.beta <- lasso.beta
+lasso.pred <-  pred.fun(resp,newX,lasso.beta)
+beta.res <- round(as.matrix(rbind(log.beta,newton.beta,grad.beta,lasso.beta,glmnet.beta)),2)
+colnames(beta.res) <- colnames(newX)
+rownames(beta.res) <- c("GLM package","Newton Raphson","Gradient Decent","Logistic Lasso","Lasso package")
+perf.res <- matrix(rep(NA),ncol = 2, nrow = 5)
+colnames(perf.res) <- c("iteration times","MSE")
+rownames(perf.res) <- c("GLM package","Newton Raphson","Gradient Decent","Logistic Lasso","Lasso package")
+perf.res[1,1] <- "NA"
+perf.res[1,2] <- round(log.pred ,2)
+perf.res[2,1] <- newton.ite
+perf.res[2,2] <- round(newton.pred,2)
+perf.res[3,1] <- grad.ite
+perf.res[3,2] <- round(grad.pred,2)
+perf.res[4,1] <- lasso.ite
+perf.res[4,2] <- round(lasso.pred,2)
+perf.res[5,1] <- "NA"
+perf.res[5,2] <- round(glmnet.pred,2)
+# output-performace
+kable(t(perf.res), "latex", caption = "The comparison of performance for estimation algorithms and models", booktabs = T) %>% 
+  kable_styling(latex_options = c("hold_position", "scale_down")) %>%
+  add_footnote(c("Dataset: Breast Cancer Diagnosis"),
+               notation = "alphabet") 
+# output-beta
+kable(t(beta.res), "latex", caption = "The comparison of performance for estimation algorithms and models", booktabs = T) %>% 
+  kable_styling(latex_options = c("hold_position", "scale_down")) %>%
+  add_footnote(c("Dataset: Breast Cancer Diagnosis"),
+               notation = "alphabet")            
+```
+
+
+Regularization is the common variable selection approaches for high-dimensional covariates. The best known Regularization is called LASSO, which is to add $L1$-penalty to the objective function. First we consider a linear regression, with penalty term, we are aiming to solve the following problem: 
+$$\min_{\beta \in \mathbb{R}^{p+1}} \{ \frac{1}{2n} \sum_{i=1}^{n}(z_{i} - \sum_{j=0}^{p}x_{i,j}\beta_{j})^{2} + \lambda P{(\beta)})\}$$
+When $p$, the number of predictors is large, the optimization could be challenging, so we could use coordinate-wise descent update with objective function
+$$
+f(\beta_{j}) = \frac{1}{2n}\sum_{i=1}^{n}(y_{i} - \sum_{k \neq j}x_{i,k}\tilde{\beta_{k}} - x_{i,j}\beta_{j})^{2} + \lambda\sum_{k \neq j}|\tilde{\beta_{k}}| + \lambda|\beta_{j}|
+$$
+Minimize $f(\beta_{j})$ w.r.t. $\beta_{j}$ while having $\tilde{\beta_{k}}$ fixed, we have
+$$
+\tilde{\beta}^{lasso}_{j}(\lambda) \leftarrow S(\frac{1}{n}\sum_{i=1}^{n}x_{i,j}(y_{i} - \tilde{y_{i}}^{(-j)}), \lambda)
+$$
+where $\tilde{y_{i}}^{(-j)} = \sum_{k \neq j}x_{i,k}\tilde{\beta_{k}}$ and $S(\hat{\beta}, \lambda) = sign(\hat{\beta})(|\hat{\beta}| - \lambda)_{+}$.
+
+If a weight $\omega_{i}$ is then associated with each observation. In this case the update becomes only slightly more complicated:
+$$
+\tilde{\beta}^{lasso}_{j}(\lambda) \leftarrow \frac{S(\sum_{i=1}^{n}\omega_{i}x_{i,j}(y_{i} - \tilde{y_{i}}^{(-j)}), \lambda)}{\sum_{i=1}^n\omega_{i}x_{i,j}^{2}}
+$$
+
+In the context of logistic regression, we are aiming to maximize the penalized log likelihood:
+$$\max_{\beta \in \mathbb{R}^{p+1}} \frac{1}{n}\sum_{i=1}^n  \{y_i(X_{i}\beta)-\log(1+\exp(X_{i}\beta))\}-\lambda \sum_{j=0}^p |\beta_j|$$
+for some $\lambda \geq 0$. Here the $x_{i,j}$ are standardized so that $\sum_{i}x_{i,j}/n = 0$ and $\sum_{i}x_{i,j}^{2}/n = 0$.
+
+The Newton algorithm for maximizing the log likelihood amounts to interatively reweighted least squares. Hence if the current estimate of the parameter is $\tilde{\beta}$, we can form a quardratic approximation to the negative log likelihood by taylor expansion around the current estimate, which is:
+$$
+f(\beta) = -\frac{1}{2n}\sum_{i=1}^{n}w_i(z_{i} - \sum_{j=0}^{p}x_{i,j}\beta_{j})^{2} + C(\tilde{\beta})
+$$
+where 
+\[
+\begin{aligned}
+& z_i = \tilde{\beta}_0+ x_i^T\tilde{\beta} + \frac{y_i-\tilde{p}(x_i)}{\tilde{p}(x_i)(1-\tilde{p}(x_i))}, \text{working response}\\
+& w_i = \tilde{p}(x_i)(1-\tilde{p}(x_i)), \text{working weights}
+\end{aligned}
+\]
+and $\tilde{p}(x_i)$ is evaluated at the current parameters, the last term is constant. The Newton update is obtained by minimizing the $f(\beta)$
+
+The coordinate descent algorithm to solve the penalized weighted least squares problem 
+$$\min_{\beta \in \mathbb{R}^{p+1}} \{ -f(\beta) + \lambda P(\beta)\}$$
+The above amounts to a sequence of nested loops:
+
+- outer loop: start with $\lambda$ that all the coefficients are forced to be zerp, then decrement $\lambda$;
+- middle loop: update the quardratic $f(\beta)$ using the current estimates of parameters;
+- inner loop: run the coordinate descent algorithm on the penalized weighted least square problem.
+
+In our problem, care is taken to avoid coefficients diverging in order to achieve fitted probabilities of 0 or 1 which is the warning message by the R package. When a probability with $\epsilon = 1e-5$ of 1, we set it to 1, and set the weights to $\epsilon$. 0 is treated similarly.
 
