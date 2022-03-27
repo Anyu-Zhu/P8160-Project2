@@ -1,0 +1,239 @@
+---
+title: "All code"
+author: "Anyu Zhu"
+date: "3/27/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(ggplot2)
+library(caret)
+library(modelr)
+```
+
+## Data pre-processing
+```{r}
+cancer = read.csv("breast-cancer.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
+  select(-id)
+
+y = as.matrix(cancer$diagnosis)
+x = scale(as.matrix(cancer[, 2:31]))
+
+n = dim(x)[1]
+n_train = floor(n*0.8)
+
+y_train = y[1:n_train,]
+y_test = y[(n_train + 1):n,]
+x_train = x[1:n_train,]
+x_test = x[(n_train + 1):n,]
+```
+
+## Logistic
+```{r}
+logisticstuff <- function(x, y , betavec) {
+
+  x = cbind(1, x)
+  colnames(x)[1] = "intercept"
+  
+  u <- x %*% betavec
+  expu <- exp(u)
+  # loglikelihood
+  loglik <- t(u) %*% y - sum(log(1 + expu))
+  p <- expu / (1 + expu)
+  # gradient
+  grad <- t(x) %*% (y - p)
+  # hessian
+  Hess <- -t(x) %*% diag(as.vector(p * (1-p))) %*% x
+
+  return(list(loglik = loglik, grad = grad, Hess = Hess))
+}
+
+logisticstuff(x, y, rep(2, 31))
+```
+
+## Newton-Raphson
+
+```{r}
+NewtonRaphson <- function(x, y, func, start, tol=1e-10, maxiter = 1000) {
+  i = 0
+  cur = start
+  stuff = func(x, y, cur)
+  res = c(0, stuff$loglik, cur)
+  prevloglik = -Inf # To make sure it iterates
+  while(i < maxiter && abs(stuff$loglik - prevloglik) > tol) {
+    i = i + 1
+    prevloglik = stuff$loglik
+    prev = cur
+    
+    # redirection
+    hess = stuff$Hess
+    hess.eigen = eigen(stuff$Hess)$values
+    
+    if (sum(hess.eigen) > 0){
+      g = max(hess.eigen) + 1
+      hess = hess - g*diag(1, dim(hess))
+    }
+    
+    cur = prev - solve(hess) %*% stuff$grad
+    
+    # step halving
+    lambda = 1
+    while (func(x, y, cur)$loglik < prevloglik) {
+      lambda = lambda / 2
+      cur = prev - lambda * solve(hess) %*% stuff$grad
+    }
+    
+    stuff = func(x, y, cur) # log-lik, gradient, Hessian
+    res = rbind(res, c(i, stuff$loglik, cur))
+    # Add current values to results matrix
+  }
+  colnames(res) = c("i", "loglik", paste0("beta", 0:(ncol(res)-3)))
+  return(res)
+}
+
+nr = NewtonRaphson(x, y, logisticstuff, rep(1,31))
+
+ans = data.frame(nr)
+colnames(ans) = c("iteration", "log likelihood")
+ggplot(ans, aes(x = iteration, y = `log likelihood`)) +
+  geom_point(size = 0.5) +
+  geom_line()
+```
+
+## Logistic LASSO
+```{r}
+soft_threshold <- function(beta, lambda) {
+    sign(beta) * max(abs(beta) - lambda, 0)
+}
+
+getP <- function(X, betavec){
+    Px <- 1/(1 + exp(-(X %*% betavec)))
+    return(Px)
+}
+
+getW <- function(Px){
+    W <- Px*(1-Px)
+    return(Px)
+}
+
+getZ <- function(X, y, betavec, Px, W){
+    Z <- X %*% betavec + (y - Px)/W
+    return(Z)
+}
+
+lassoCD <- function(
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
+){
+    betavec <- init_beta
+    N <- length(y)
+    i <- 0
+    loss <- 1e5
+    prevloss <- Inf
+    res <- c(0, loss, betavec)
+    cont <- TRUE
+    while(i <= max_iter && cont){
+        i <- i + 1
+        prevloss <- loss
+        for(j in 1:length(betavec)){
+            Px <- getP(X, betavec)
+            W <- getW(Px)
+            W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
+            Z <- getZ(X, y, betavec, Px, W)
+            betaresj <- betavec
+            betaresj[j] <- 0
+            Zresj <- X %*% betaresj
+            betaj <- 
+                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
+            betavec[j] <- betaj
+            loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
+        }
+        # print(loss)
+        if(abs(prevloss - loss) < tol || loss > Inf){
+            cont <- FALSE
+        }
+        res <- rbind(res, c(i, loss, betavec))
+    }
+    return(res)
+}
+```
+
+
+## Cross-Validation
+```{r}
+lambda.cv = function(lambdas, x, y, k) {
+  data = as.data.frame(cbind(x, y))
+  folds = crossv_kfold(data, k = k)
+  
+  start = rep(0, 31)
+  fold.mse <- vector()
+  fold.se <- vector()
+
+  for (j in 1:length(lambdas)) {
+    fold.errors <- vector()
+    for (i in 1:k) {
+      trainrow= folds[i,1][[1]][[toString(i)]]$idx
+      testrow = folds[i,2][[1]][[toString(i)]]$idx
+      
+      train.X = x[trainrow,] 
+      train.X = cbind(rep(1,dim(train.X)[1]),train.X)
+      test.X = x[testrow,] 
+      test.X = cbind(rep(1,dim(test.X)[1]),test.X)
+      
+      train.y = y[trainrow,] 
+      test.y = y[testrow,] 
+      
+      # Perform the logistic-LASSO
+      fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
+      betas = fit[nrow(fit),2:32]
+      u = test.X %*% betas
+      expu = exp(u)
+      prob = expu / (1 + expu)
+      # Calculate the test MSE for the fold
+      fold.errors[i] = mean((test.y - prob)^2)
+    }
+    start = betas
+    fold.mse[j] = mean(fold.errors)
+    fold.se[j] = sqrt(var(fold.errors)/k)
+  }
+  return(cbind(log.lambda = log(lambdas), fold.mse, fold.se))
+}
+
+lambda.seq = exp(seq(-1,-10, length=100))
+
+cv.path = lambda.cv(lambda.seq, x, y, 5)
+cv.path = as.data.frame(cv.path)
+min.mse = min(cv.path$fold.mse)
+min.lambda = cv.path[which(cv.path$fold.mse == min.mse),]$log.lambda
+
+cv.path %>%
+  ggplot(data = ., aes(x = log.lambda, y = fold.mse)) +
+  geom_vline(xintercept = min.lambda) +
+  geom_line(color = "red") +
+  geom_errorbar(aes(ymin = fold.mse - fold.se, ymax = fold.mse + 
+                      fold.se), color = "gray50") +
+  labs(
+   title = "Average Test Fold MSE as a function of lambda",
+   x = "log(lambda)",
+   y = "Average Test MSE"
+   ) +
+ theme(plot.title = element_text(hjust = 0.5))
+
+exp(min.lambda)
+```
+
+## Path Result
+```{r}
+
+```
+
+## Compare with full model
+```{r}
+
+```
+
+

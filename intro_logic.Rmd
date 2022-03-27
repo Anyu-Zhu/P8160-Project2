@@ -48,8 +48,8 @@ Figure 2 displays the correlation between variables. We can see there exists mul
 
 ```{r}
 cancer_numeric = cancer[, 3:32]
-corrplot(cor(cancer_numeric), tl.col = "blue", tl.cex = 0.5, 
-         title = "Figure 2: Correlation Plot", mar=c(0,0,1,0))
+corrplot(cor(cancer_numeric), method = 'color', tl.col = "blue", tl.cex = 0.5, 
+         tl.srt = 45, title = "Figure 2: Correlation Plot", mar=c(0,0,1,0))
 ```
 
 
@@ -69,7 +69,7 @@ $$l(\beta)=\sum_{i=1}^{n}\left\{y_{i}\left(X_{i} \beta\right)-\log \left(1+\exp 
 By taking derivative with respect to $\beta$, the gradient is:
 
 $$\nabla l(\beta)= \sum_{i=1}^{n}\left(y_{i}-\pi_{i}\right) \boldsymbol{x}_{i} =  X^{T}(Y-\boldsymbol{\pi})$$
-where $\pi_{i}=\frac{e^{\theta_{i}}}{1+e^{\theta_{i}}}$
+where $\pi_{i}=\frac{e^{\beta_{i}}}{1+e^{\beta_{i}}}$
 
 By taking the second derivative, the Hessian matrix can be represented by:
 
