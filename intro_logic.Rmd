@@ -27,7 +27,7 @@ n_b = n_obs - n_m
 ## Introduction
 
 ### Objective
-The goal of the project is to build a predictive model based on logistic regression to facilitate cancer diagnosis.
+The goal of the project is to build a predictive model based on logistic regression to facilitate cancer diagnosis. We first build a logistic model to classify the images, then developed a Newton-Raphson algorithm to estimate the parameters of the logistic model. Then, we built a logistic-LASSO model to select features. Finally, we applied 5-fold cross-validation to select the best $\lambda$ for the logistic-LASSO model. 
 
 ### Dataset
 The dataset 'breast-cancer'we used contains 569 rows and 32 columns. The variable `diagnosis` identifies if the image is coming from cancer tissue or benign. We labeled `malignant` as 1 and `benign` as 0. In total there are 212 malignant cases and 357 benign cases. There are 30 variables corresponding to mean, standard deviation and the largest values (points on the tails) of the distributions of 10 features: radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, and fractal dimension.
@@ -57,10 +57,23 @@ corrplot(cor(cancer_numeric), tl.col = "blue", tl.cex = 0.5,
 
 ## Logistic Model
 
-```{r}
-cancer = cancer %>% 
-  janitor::clean_names() %>% 
-  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1)  %>% 
-  select(-id)
-```
+Take $Y_i$ as the response of $i_{th}$ observation and follows binary distribution $Bin(\pi_i)$. $\pi_i$ is the probability of $i_{th}$ observation being malignant. By applying the logit link: 
+$$g(\mu)=\operatorname{logit}(\mu)=\log \frac{\mu}{1-\mu}$$
+we have the logistic regression model:
+$$\log \frac{\pi_{i}}{1-\pi_{i}}=X_{i} \beta$$
+Thus we have the likelihood function of logistic regression
+$$L(\pi)=\prod_{i=1}^{n} f\left(y_{i}\right)=\prod_{i=1}^{n} \pi_{i}^{y_{i}}\left(1-\pi_{i}\right)^{1-y_{i}}$$
+$$L(\beta ; X, y)=\prod_{i=1}^{n}\left\{\left(\frac{\exp \left(X_{i} \beta\right)}{1+\exp \left(X_{i} \beta\right)}\right)^{y_{i}}\left(\frac{1}{1+\exp \left(X_{i} \beta\right)}\right)^{1-y_{i}}\right\}$$
+Then maximize the log likelihood:
+$$l(\beta)=\sum_{i=1}^{n}\left\{y_{i}\left(X_{i} \beta\right)-\log \left(1+\exp \left(X_{i} \beta\right)\right)\right\}$$
+By taking derivative with respect to $\beta$, the gradient is:
 
+$$\nabla l(\beta)= \sum_{i=1}^{n}\left(y_{i}-\pi_{i}\right) \boldsymbol{x}_{i} =  X^{T}(Y-\boldsymbol{\pi})$$
+where $\pi_{i}=\frac{e^{\theta_{i}}}{1+e^{\theta_{i}}}$
+
+By taking the second derivative, the Hessian matrix can be represented by:
+
+$$
+\nabla^{2} l(\beta)=-X^{T} \operatorname{diag}\left(\pi_{i}\left(1-\pi_{i}\right)\right) X
+$$
+i = 1, ... n. Hessian matrix is negative definite.
