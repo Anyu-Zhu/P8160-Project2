@@ -2,7 +2,7 @@
 title: "coordinate_descent_alg"
 author: "Renjie Wei"
 date: '2022-03-24'
-output: html_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
@@ -34,7 +34,7 @@ getZ <- function(X, y, betavec, Px, W){
 }
 
 lassoCD <- function(
-        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 500, tol = 1e-8
 ){
     betavec <- init_beta
     N <- length(y)
@@ -47,20 +47,23 @@ lassoCD <- function(
         i <- i + 1
         prevloss <- loss
         for(j in 1:length(betavec)){
+            #if(betavec[j] == 0){
+            #    next
+            #}
             Px <- getP(X, betavec)
-            W <- getW(Px)
-            W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
+            Px <- ifelse(abs(1 - Px) < 1e-5, 1, ifelse(abs(Px) < 1e-5, 0, Px))
+            W <- ifelse(abs(getW(Px)) < 1e-5, 1e-5, getW(Px))
             Z <- getZ(X, y, betavec, Px, W)
             betaresj <- betavec
             betaresj[j] <- 0
-            Presj <- getP(X, betaresj)
-            Wresj <- getW(Presj)
-            Wresj <- ifelse(abs(Wresj-0) < 1e-5, 1e-5, Wresj)
-            Zresj <- getZ(X, y, betaresj, Presj, Wresj)
-            betaj <- 
-                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
+            #Presj <- getP(X, betaresj)
+            #Presj <- ifelse(abs(1 - Presj) < 1e-5, 1, ifelse(abs(Presj) < 1e-5, 0, Presj))
+            #Wresj <- ifelse(abs(getW(Presj)) < 1e-5, 1e-5, getW(Presj))
+            #Zresj <- getZ(X, y, betaresj, Presj, Wresj)
+            Zresj <- X %*% betaresj
+            betaj <- soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
             betavec[j] <- betaj
-            loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
+            loss <- (1/(2*N))*sum(W * (Z - Zresj)^2) + lambda * sum(abs(betavec))
         }
         print(loss)
         if(abs(prevloss - loss) < tol || loss > Inf){
@@ -70,46 +73,47 @@ lassoCD <- function(
     }
     return(res)
 }
+
 ```
 
 ```{r CD_lasso_mtx}
 ## matrix version ##
-lassoCD.matrix <- function(
-        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
-){
-    betavec <- init_beta
-    N <- length(y)
-    i <- 0
-    loss <- 1e5
-    prevloss <- Inf
-    res <- c(0, loss, betavec)
-    cont <- TRUE
-    while(i <= max_iter && cont){
-        i <- i + 1
-        prevloss <- loss
-        for(j in 1:length(betavec)){
-            Px <- getP(X, betavec)
-            W <- getW(Px)
-            #W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
-            Wdiag <- diag(c(W), N, N)
-            Z <- getZ(X, y, betavec, Px, W)
-            betaresj <- betavec
-            betaresj[j] <- 0
-            Zresj <- X %*% betaresj
-            betaj <- 
-                soft_threshold((1/N) * (t(X[,j]) %*% Wdiag %*% (Z-(X %*% betaresj))),
-                               lambda)/(t(X[,j]) %*% Wdiag %*% X[,j])
-            betavec[j] <- betaj
-            loss <- (1/(2*N))*sum(Wdiag %*% (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
-        }
-        print(loss)
-        if(abs(prevloss - loss) < tol || loss > Inf){
-            cont <- FALSE
-        }
-        res <- rbind(res, c(i, loss, betavec))
-    }
-    return(res)
-}
+#lassoCD.matrix <- function(
+#        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
+#){
+#    betavec <- init_beta
+#    N <- length(y)
+#    i <- 0
+#    loss <- 1e5
+#    prevloss <- Inf
+#    res <- c(0, loss, betavec)
+#    cont <- TRUE
+#    while(i <= max_iter && cont){
+#        i <- i + 1
+#        prevloss <- loss
+#        for(j in 1:length(betavec)){
+#            Px <- getP(X, betavec)
+#            W <- getW(Px)
+#            #W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
+#            Wdiag <- diag(c(W), N, N)
+#            Z <- getZ(X, y, betavec, Px, W)
+#            betaresj <- betavec
+#            betaresj[j] <- 0
+#            Zresj <- X %*% betaresj
+#            betaj <- 
+#                soft_threshold((1/N) * (t(X[,j]) %*% Wdiag %*% (Z-(X %*% betaresj))),
+#                               lambda)/(t(X[,j]) %*% Wdiag %*% X[,j])
+#            betavec[j] <- betaj
+#            loss <- (1/(2*N))*sum(Wdiag %*% (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
+#        }
+#        print(loss)
+#        if(abs(prevloss - loss) < tol || loss > Inf){
+#            cont <- FALSE
+#        }
+#        res <- rbind(res, c(i, loss, betavec))
+#    }
+#    return(res)
+#}
 ```
 
 ```{r for_CD_lasso_pre}
@@ -133,11 +137,12 @@ sqrt(var(cancer$radius_mean))
 
 cancer$diagnosis = case_when(cancer$diagnosis == "M" ~ 1,
                              TRUE ~ 0)
-data.cancer = data.matrix(cancer[3:32])
+data.cancer = data.frame(cancer[3:32])
+data.cancer["intercept"] = 1
+data.cancer = as.matrix(data.cancer)
 
-cancer.lassoCD <- lassoCD(scale(data.cancer), cancer$diagnosis, init_beta = c(rep(10,30)), lambda = 0.005)
-
-cancer.lassoCD.predict <- lassoCD.predict(cancer.lassoCD[2,3:32],scale(data.cancer), cancer$diagnosis)
+cancer.lassoCD <- lassoCD(data.cancer, cancer$diagnosis, init_beta = c(rep(0,31)), lambda = 0.01)
+cancer.lassoCD.predict <- lassoCD.predict(cancer.lassoCD[2,3:33], data.cancer, cancer$diagnosis)
 
 pred.obs <- data.frame(pred = cancer.lassoCD.predict$res, obs = cancer$diagnosis)
 pred.obs$mis = pred.obs$pred == pred.obs$obs
@@ -161,12 +166,12 @@ path <- function(X, y, lambdaseq){
         last_beta <- cd.result[nrow(cd.result),3:dim(cd.result)[2]]
         init_beta <- last_beta
         betas <- rbind(betas,c(last_beta))
-        i <- i+1
+        i <- i + 1
     }
     return(data.frame(cbind(lambdaseq,betas)))
 }
-path.out <- path(scale(data.cancer), cancer$diagnosis,lambdaseq = exp(seq(-8e-1,-8, length=100)))
-colnames(path.out) <- c("lambda",colnames(cancer)[3:32])
+path.out <- path(data.cancer, cancer$diagnosis,lambdaseq = exp(seq(1,-10, length=100)))
+colnames(path.out) <- c("lambda",colnames(cancer)[3:32],"intercept")
 # plot a path of solutions
 path.plot <- path.out %>%
   gather(key = par, value = estimate, c(2:dim(path.out)[2])) %>% 
@@ -211,54 +216,24 @@ cvresult <- function(X, y, grid, K){
 ```
 
 ```{r}
-# logistic regression by GLM
-log.beta <- c(logit.beta[2:length(logit.beta)],logit.beta[1])
-pred <- predict(logfit.1)
-log.pred <- mean((resp-exp(pred)/(1+exp(pred)))^2) # abs(mean(logfit.1$residuals))
-# newton's method
-newton.ite <- nrow(newres)
-newton.beta <- newres[nrow(newres),3:dim(newres)[2]]
-newton.pred <- pred.fun(resp,newX,newton.beta)
-# gradient decent
-grad.ite <- nrow(gradres)
-grad.beta <- gradres[nrow(gradres),3:dim(gradres)[2]]
-grad.pred <- pred.fun(resp,newX,grad.beta)
-logmod.cv <- cv.glmnet(newdat$X[,-dim(newdat$X)[2]], y=newdat$y, alpha=1, family="binomial")
-best.lambda.func <- logmod$lambda.min
-logmod <- glmnet(newdat$X[,-dim(newdat$X)[2]], y=newdat$y, alpha=1, family="binomial",lambda = best.lambda.func)
-glmnet.beta <- c(coef.glmnet(logmod)[2:length(coef.glmnet(logmod))],coef.glmnet(logmod)[1])
-glmnet.pred <- predict(logmod,newdataX,type="response", lambda = best.lambda.func)
-glmnet.pred <- mean((resp-glmnet.pred)^2)
-# lasso logistic
-lasso.ite <- nrow(finlasso)
-lasso.beta <- lasso.beta
-lasso.pred <-  pred.fun(resp,newX,lasso.beta)
-beta.res <- round(as.matrix(rbind(log.beta,newton.beta,grad.beta,lasso.beta,glmnet.beta)),2)
-colnames(beta.res) <- colnames(newX)
-rownames(beta.res) <- c("GLM package","Newton Raphson","Gradient Decent","Logistic Lasso","Lasso package")
-perf.res <- matrix(rep(NA),ncol = 2, nrow = 5)
-colnames(perf.res) <- c("iteration times","MSE")
-rownames(perf.res) <- c("GLM package","Newton Raphson","Gradient Decent","Logistic Lasso","Lasso package")
-perf.res[1,1] <- "NA"
-perf.res[1,2] <- round(log.pred ,2)
-perf.res[2,1] <- newton.ite
-perf.res[2,2] <- round(newton.pred,2)
-perf.res[3,1] <- grad.ite
-perf.res[3,2] <- round(grad.pred,2)
-perf.res[4,1] <- lasso.ite
-perf.res[4,2] <- round(lasso.pred,2)
-perf.res[5,1] <- "NA"
-perf.res[5,2] <- round(glmnet.pred,2)
-# output-performace
-kable(t(perf.res), "latex", caption = "The comparison of performance for estimation algorithms and models", booktabs = T) %>% 
-  kable_styling(latex_options = c("hold_position", "scale_down")) %>%
-  add_footnote(c("Dataset: Breast Cancer Diagnosis"),
-               notation = "alphabet") 
-# output-beta
-kable(t(beta.res), "latex", caption = "The comparison of performance for estimation algorithms and models", booktabs = T) %>% 
-  kable_styling(latex_options = c("hold_position", "scale_down")) %>%
-  add_footnote(c("Dataset: Breast Cancer Diagnosis"),
-               notation = "alphabet")            
+library(glmnet)
+library(caret)
+
+ctrl <- trainControl(method = "cv",
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+glmnGrid <- expand.grid(alpha = 1, lambda = exp(seq(2,-10, length = 100)))
+model.glmn <- train(x = scale(data.cancer),
+                   y = as.factor(ifelse(cancer$diagnosis == 1, "pos", "neg")),
+                   method = "glmnet",
+                   tuneGrid = glmnGrid,
+                   metric = "ROC",
+                   trControl = ctrl)
+model.glmn$bestTune
+glmn.coef = coef(model.glmn$finalModel)
+
+model.glmnet = glmnet(scale(data.cancer), cancer$diagnosis, family = "binomial", lambda = 0.280, intercept = FALSE)
+predict.glmnet(model.glmnet , s = 0.280, type = "coefficient")
 ```
 
 
