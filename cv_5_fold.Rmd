@@ -133,7 +133,8 @@ coordinatelasso <- function(lambda, dat, s, tol=1e-10, maxiter = 200){
 ```
 
 ```{r}
-lambda.cv = function(lambdas, x, y, k) {
+lambda.cv = function(lambdas, x, y, k, seed) {
+  set.seed(seed)
   data = as.data.frame(cbind(x, y))
   folds = crossv_kfold(data, k = k)
   
@@ -173,7 +174,7 @@ lambda.cv = function(lambdas, x, y, k) {
 
 lambda.seq = exp(seq(-2,-5, length=100))
 
-cv.path = lambda.cv(lambda.seq, x, y, 5)
+cv.path = lambda.cv(lambda.seq, x, y, 5, 2022)
 cv.path = as.data.frame(cv.path)
 min.mse = min(cv.path$fold.mse)
 min.lambda = cv.path[which(cv.path$fold.mse == min.mse),]$log.lambda
@@ -202,4 +203,5 @@ In order to find the optimal lambda, we use 5-fold cross validation. The dataset
 We use RMSE as the criteria to choose the best tuning parameter and corresponding model obtained from train data, and calculating RMSE to evaluate the model performance in test dataset.
 $$RMSE = \sqrt{(test.y - predict.y)^2}$$
 
-After the 5-fold cross validation, we found that the best lambda is about $e^{-3.232} = 0.0391$ in the optimal model. 
+After the 5-fold cross validation, we found that the best lambda is about $e^{-3.5152} = 0.0297$ in the optimal model when set.seed(2022). 
+
