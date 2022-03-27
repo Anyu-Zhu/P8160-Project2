@@ -12,6 +12,7 @@ library(tidyverse)
 library(ggplot2)
 library(caret)
 library(modelr)
+library(pROC)
 ```
 
 ## Data pre-processing
@@ -27,8 +28,8 @@ x = scale(as.matrix(cancer[, 2:31]))
 n = dim(x)[1]
 n_train = floor(n*0.8)
 
-y_train = y[1:n_train,]
-y_test = y[(n_train + 1):n,]
+y_train = as.matrix(y[1:n_train,], ncol = 1)
+y_test = as.matrix(y[(n_train + 1):n,], ncol = 1)
 x_train = x[1:n_train,]
 x_test = x[(n_train + 1):n,]
 ```
@@ -170,8 +171,8 @@ lambda.cv = function(lambdas, x, y, k) {
   folds = crossv_kfold(data, k = k)
   
   start = rep(0, 31)
-  fold.mse <- vector()
-  fold.se <- vector()
+  fold.auc <- vector()
+  #fold.se <- vector()
 
   for (j in 1:length(lambdas)) {
     fold.errors <- vector()
@@ -194,36 +195,30 @@ lambda.cv = function(lambdas, x, y, k) {
       expu = exp(u)
       prob = expu / (1 + expu)
       # Calculate the test MSE for the fold
-      fold.errors[i] = mean((test.y - prob)^2)
+      fold.errors[i] = mean(auc(test.y, prob))
     }
     start = betas
-    fold.mse[j] = mean(fold.errors)
-    fold.se[j] = sqrt(var(fold.errors)/k)
+    fold.auc[j] = mean(fold.errors)
+    #fold.se[j] = sqrt(var(fold.errors)/k)
   }
-  return(cbind(log.lambda = log(lambdas), fold.mse, fold.se))
+  return(cbind(log.lambda = log(lambdas), fold.auc))
 }
 
 lambda.seq = exp(seq(-1,-10, length=100))
 
-cv.path = lambda.cv(lambda.seq, x, y, 5)
+cv.path = lambda.cv(lambda.seq, x_train, y_train, 5)
 cv.path = as.data.frame(cv.path)
-min.mse = min(cv.path$fold.mse)
-min.lambda = cv.path[which(cv.path$fold.mse == min.mse),]$log.lambda
+max.auc = max(cv.path$fold.auc)
+best.lambda = cv.path[which(cv.path$fold.auc == max.auc),]$log.lambda
 
 cv.path %>%
-  ggplot(data = ., aes(x = log.lambda, y = fold.mse)) +
-  geom_vline(xintercept = min.lambda) +
-  geom_line(color = "red") +
-  geom_errorbar(aes(ymin = fold.mse - fold.se, ymax = fold.mse + 
-                      fold.se), color = "gray50") +
-  labs(
-   title = "Average Test Fold MSE as a function of lambda",
-   x = "log(lambda)",
-   y = "Average Test MSE"
-   ) +
- theme(plot.title = element_text(hjust = 0.5))
+  ggplot(data = ., aes(x = log.lambda, y = fold.auc)) +
+  geom_vline(xintercept = best.lambda) +
+  geom_line(color = "red") 
+  #geom_errorbar(aes(ymin = fold.mse - fold.se, ymax = fold.mse + 
+                      #fold.se), color = "gray50") +
 
-exp(min.lambda)
+exp(best.lambda)
 ```
 
 ## Path Result
