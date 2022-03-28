@@ -249,7 +249,40 @@ cv.path2 %>%
                       #fold.se), color = "gray50") +
 
 exp(best.lambda)
+
+
+x_train_getcoef = cbind(rep(1,dim(x_train)[1]),x_train)
+bestfit = lassoCD(x_train_getcoef, y_train, lambda = exp(best.lambda), init_beta = rep(1,12))
 ```
+
+```{r}
+path <- function(X, y, lambdaseq){
+    init_beta <- rep(0, dim(X)[2])
+    betas <- NULL
+    for (i in 1:length(lambdaseq)) {
+        cd.result <- lassoCD(X, y, lambda = lambdaseq[i], init_beta = init_beta)
+        last_beta <- cd.result[nrow(cd.result),3:dim(cd.result)[2]]
+        init_beta <- last_beta
+        betas <- rbind(betas,c(last_beta))
+        i <- i + 1
+    }
+    return(data.frame(cbind(lambdaseq,betas)))
+}
+path.out <- path(x_train_getcoef, y_train,lambdaseq = exp(seq(1,-10, length=100)))
+colnames(path.out) <- c("lambda","intercept",colnames(x_train_getcoef)[2:12])
+# plot a path of solutions
+path.plot <- path.out %>%
+  gather(key = par, value = estimate, c(2:dim(path.out)[2])) %>% 
+  ggplot(aes(x = log(lambda), y = estimate, group = par, col = par)) +
+  geom_line()+
+  ggtitle("A path of solutions with a sequence of descending lambda's") +
+  xlab("log(Lambda)") + 
+  ylab("Estimate") +
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size = 6))
+path.plot
+```
+
 ## 5-Fold Cross Validation
 The test data is taken from the same data, but is not involved in the training, so that the model can be evaluated relatively objectively to match the data outside the training set. The evaluation of the model in the test data is commonly done by cross-validation. It divides the original data into K groups (K-Fold), and makes each subset of data into a test set separately, and the rest of the K-1 subset data as the training set, so that K models will be obtained. These K models are evaluated separately in the test set, and the final error MSE (Mean Squared Error) is summed and averaged to obtain the cross-validation error.
 
