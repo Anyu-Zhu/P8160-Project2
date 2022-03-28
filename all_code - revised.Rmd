@@ -6,7 +6,8 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
 
 library(tidyverse)
 library(ggplot2)
@@ -28,8 +29,7 @@ x = cancer %>%
          -area_se, -perimeter_worst, -area_worst, -concave.points_worst, -texture_worst, 
          -smoothness_worst, -compactness_se, -compactness_mean, -compactness_worst, -concavity_worst, 
          -fractal_dimension_worst, -perimeter_se, -concave.points_se, -fractal_dimension_se, -symmetry_worst) %>% 
-  as.matrix() %>% 
-  scale()
+  as.matrix() 
 
 n = dim(x)[1]
 n_train = floor(n*0.8)
@@ -39,8 +39,8 @@ y_test = as.matrix(y[(n_train + 1):n,], ncol = 1)
 x_train = x[1:n_train,]
 x_test = x[(n_train + 1):n,]
 
-x_train_b0 = cbind(rep(1,nrow(x_train)),x_train)
-x_test_b0 = cbind(rep(1,nrow(x_test)), x_test)
+x_train_b0 = cbind(rep(1,nrow(x_train)),scale(x_train))
+x_test_b0 = cbind(rep(1,nrow(x_test)), scale(x_test))
 ```
 
 ## Logistic
@@ -160,7 +160,7 @@ lassoCD <- function(
             betaresj[j] <- 0
             Zresj <- X %*% betaresj
             betaj <- 
-                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/mean(W * X[,j] * X[,j])
+                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
             betavec[j] <- betaj
             loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
         }
@@ -274,6 +274,7 @@ min.lambda
 
 ```{r}
 lambda.cv = function(lambdas, x, y, k) {
+  set.seed(2022)
   data = as.data.frame(cbind(x, y))
   folds = crossv_kfold(data, k = k)
   
@@ -309,7 +310,7 @@ lambda.cv = function(lambdas, x, y, k) {
   return(cbind(log.lambda = log(lambdas), fold.auc))
 }
 
-lambda.seq = exp(seq(-6,-12, length=500))
+lambda.seq = exp(seq(-1,-12, length=500))
 
 cv.path = lambda.cv(lambda.seq, x_train_b0, y_train, 5)
 cv.path = as.data.frame(cv.path)
@@ -324,7 +325,8 @@ cv.path %>%
   geom_vline(xintercept = best.lambda) +
   geom_line(color = "red") 
 
-exp(best.lambda)
+
+mean(exp(best.lambda))
 
 best.lambda
 ```
@@ -334,19 +336,25 @@ best.lambda
 ```{r}
 library(caret)
 
+set.seed(8160)
+
 ctrl <- trainControl(method = "cv",
                      number = 5,
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
+
 glmnGrid <- expand.grid(alpha = 1, lambda = lambda.seq)
+
 model.glmn <- train(x = x_train,
                    y = as.factor(ifelse(y_train == 1, "pos", "neg")),
                    method = "glmnet",
                    tuneGrid = glmnGrid,
                    metric = "ROC",
                    trControl = ctrl)
+
 model.glmn$bestTune
-glmn.coef = coef(model.glmn$finalModel, model.glmn$bestTune$lambda)
+
+
 ```
 
 
@@ -367,19 +375,26 @@ lassoCD.predict <- function(betavec, X_new, y){
     return(res)
 }
 
+NR.lasso.ans = lassoCD(x_train_b0, y_train, lambda = exp(best.lambda), init_beta = rep(0, ncol(x_train_b0)))
 ```
 
 ## coefficients
 
 ```{r}
 NR.coef = ans[nrow(ans), 3:ncol(ans)] %>% t()
+NR.lasso.coef = NR.lasso.ans[nrow(NR.lasso.ans), 3:ncol(NR.lasso.ans)]
+
 fit.glm = glm(y_train ~ x_train, family = binomial(link = "logit"))
 glm.coef = fit.glm$coefficients %>% as.data.frame()
 
-logistics.coef = cbind(glm.coef, NR.coef)
-colnames(logistics.coef) = c("glm package", "Newton-Raphson")
+glmn.coef = coef(model.glmn$finalModel, model.glmn$bestTune$lambda) %>% as.matrix() %>% as.data.frame()
 
-logistics.coef %>% knitr::kable()
+logistics.coef = cbind(glmn.coef, glm.coef, NR.coef, NR.lasso.coef)
+colnames(logistics.coef) = c("caret-glmnet", "glm package", "Newton-Raphson", "Logistic-LASSO")
+
+logistics.coef %>% 
+  select("glm package", "Newton-Raphson", "Logistic-LASSO", "caret-glmnet") %>% 
+  knitr::kable()
 ```
 
 
