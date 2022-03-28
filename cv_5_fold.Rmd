@@ -18,27 +18,23 @@ library(modelr)
 ## data preprocessing
 
 ```{r data, message = FALSE }
-standardize = function(col) {
-  mean = mean(col)
-  stdev = sd(col)
-  return((col - mean)/stdev)
-}
-
-# just standardize the covariates
-standardized.data = read.csv(file = "breast-cancer.csv") %>% 
-  dplyr::select(radius_mean:fractal_dimension_worst) %>% 
-  map_df(.x = ., standardize)
-
-# add back in the response and ids
-data = cbind(read.csv(file = "breast-cancer.csv") %>% dplyr::select(diagnosis), standardized.data) %>% 
-  mutate(diagnosis = ifelse(diagnosis == "M", 1, 0))
-
 cancer = read.csv("breast-cancer.csv") %>% 
   janitor::clean_names() %>% 
-  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
-  select(-id)
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1)
 y = as.matrix(cancer$diagnosis)
 x = scale(as.matrix(cancer[, 2:31]))
+
+cancer_x = cancer %>% 
+  dplyr::select(-id,-diagnosis, -perimeter_mean, -area_mean, -concave_points_mean, -radius_worst, -area_se, -perimeter_worst, -area_worst, -concave_points_worst, -texture_worst, -smoothness_worst, -compactness_se, -compactness_mean, -compactness_worst, -concavity_worst, -fractal_dimension_worst, -perimeter_se, -concave_points_se, -fractal_dimension_se, -symmetry_worst)
+x2 = scale(as.matrix(cancer_x))
+
+n = dim(x2)[1]
+n_train = floor(n*0.8)
+
+y_train = as.matrix(y[1:n_train,], ncol = 1)
+y_test = as.matrix(y[(n_train + 1):n,], ncol = 1)
+x_train = x2[1:n_train,]
+x_test = x2[(n_train + 1):n,]
 ```
 
 ## lassocd
@@ -64,7 +60,7 @@ getZ <- function(X, y, betavec, Px, W){
 
 
 lassoCD <- function(
-        X, y, lambda, init_beta, max_iter = 1e4, tol = 1e-8
+        X, y, lambda, init_beta, max_iter = 500, tol = 1e-8
 ){
     betavec <- init_beta
     N <- length(y)
@@ -138,7 +134,7 @@ lambda.cv = function(lambdas, x, y, k, seed) {
   data = as.data.frame(cbind(x, y))
   folds = crossv_kfold(data, k = k)
   
-  start = rep(0, 31)
+  start = rep(0, 12)
   fold.mse <- vector()
   fold.se <- vector()
 
@@ -158,7 +154,7 @@ lambda.cv = function(lambdas, x, y, k, seed) {
       
       # Perform the logistic-LASSO
       fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
-      betas = fit[nrow(fit),2:32]
+      betas = fit[nrow(fit),2:13]
       u = test.X %*% betas
       expu = exp(u)
       prob = expu / (1 + expu)
@@ -174,7 +170,7 @@ lambda.cv = function(lambdas, x, y, k, seed) {
 
 lambda.seq = exp(seq(-2,-5, length=100))
 
-cv.path = lambda.cv(lambda.seq, x, y, 5, 2022)
+cv.path = lambda.cv(lambda.seq, x_train, y_train, 5, 2022)
 cv.path = as.data.frame(cv.path)
 min.mse = min(cv.path$fold.mse)
 min.lambda = cv.path[which(cv.path$fold.mse == min.mse),]$log.lambda
@@ -195,13 +191,80 @@ cv.path %>%
 exp(min.lambda)
 ```
 
+## Cross-Validation
+```{r}
+lambda.cv = function(lambdas, x, y, k, seed) {
+  set.seed(seed)
+  data = as.data.frame(cbind(x, y))
+  folds = crossv_kfold(data, k = k)
+  
+  start = rep(0, 12)
+  fold.auc <- vector()
+  #fold.se <- vector()
+
+  for (j in 1:length(lambdas)) {
+    fold.errors <- vector()
+    for (i in 1:k) {
+      trainrow= folds[i,1][[1]][[toString(i)]]$idx
+      testrow = folds[i,2][[1]][[toString(i)]]$idx
+      
+      train.X = x[trainrow,] 
+      train.X = cbind(rep(1,dim(train.X)[1]),train.X)
+      test.X = x[testrow,] 
+      test.X = cbind(rep(1,dim(test.X)[1]),test.X)
+      
+      train.y = y[trainrow,] 
+      test.y = y[testrow,] 
+      
+      # Perform the logistic-LASSO
+      fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
+      betas = fit[nrow(fit),2:13]
+      u = test.X %*% betas
+      expu = exp(u)
+      prob = expu / (1 + expu)
+      # Calculate the test MSE for the fold
+      fold.errors[i] = mean(auc(test.y, prob))
+    }
+    start = betas
+    fold.auc[j] = mean(fold.errors)
+    #fold.se[j] = sqrt(var(fold.errors)/k)
+  }
+  return(cbind(log.lambda = log(lambdas), fold.auc))
+}
+
+lambda.seq = exp(seq(-1,-10, length=100))
+
+cv.path = lambda.cv(lambda.seq, x_train, y_train, 5, 2022)
+cv.path = as.data.frame(cv.path)
+max.auc = max(cv.path$fold.auc)
+best.lambda = cv.path[which(cv.path$fold.auc == max.auc),]$log.lambda
+
+cv.path %>%
+  ggplot(data = ., aes(x = log.lambda, y = fold.auc)) +
+  geom_vline(xintercept = best.lambda) +
+  geom_line(color = "red") 
+  #geom_errorbar(aes(ymin = fold.mse - fold.se, ymax = fold.mse + 
+                      #fold.se), color = "gray50") +
+
+exp(best.lambda)
+```
 ## 5-Fold Cross Validation
 The test data is taken from the same data, but is not involved in the training, so that the model can be evaluated relatively objectively to match the data outside the training set. The evaluation of the model in the test data is commonly done by cross-validation. It divides the original data into K groups (K-Fold), and makes each subset of data into a test set separately, and the rest of the K-1 subset data as the training set, so that K models will be obtained. These K models are evaluated separately in the test set, and the final error MSE (Mean Squared Error) is summed and averaged to obtain the cross-validation error.
 
 Cross-validation makes effective use of the limited data and the evaluation results are as close as possible to the performance of the models on the test set, which can be used as an indicator for model optimization.
 
-In order to find the optimal lambda, we use 5-fold cross validation. The dataset is divided into five subdatasets by using the *crossv_kfold* function. We combined 4 of them as the training data set, and the rest $\frac{1}{5}$ of them as the test data set each time. The optimal coefficients is then found five times by running the logit-LASSO on the training data set, leaving a different subset out each time. The subset left out is then used to estimate the model performance. This is done for all lambdas in the pre-defined sequence in order to search for the lambda with the highest average predictive ability. 
-We use MSE as the criteria to choose the best tuning parameter and corresponding model obtained from train data, and calculating MSE to evaluate the model performance in test dataset.
+In order to find the best lambda, we use 5-fold cross validation. The dataset is divided into five subdatasets by using the *crossv_kfold* function. We combined 4 of them as the training data set, and the rest $\frac{1}{5}$ of them as the test data set each time. The optimal coefficients is then found five times by running the logit-LASSO on the training data set, leaving a different subset out each time. The subset left out is then used to estimate the model performance. This is done for all lambdas in the pre-defined sequence in order to search for the lambda with the highest average predictive ability. 
+We use AUC as the criteria to choose the best tuning parameter and corresponding model obtained from train data since the response of this data set is binary. We then calculating AUC to evaluate the model performance in test dataset and choose the best lambda whose AUC is the biggest.
 
-After the 5-fold cross validation, we found that the best lambda is about $e^{-3.5152} = 0.0297$ in the optimal model when set.seed(2022). 
+After the 5-fold cross validation, we found that the best lambda is about $e^{-1.273} = 0.280$ in the optimal model when set.seed(8160). 
+```{r}
+cancer = read.csv("breast-cancer.csv") %>% 
+  janitor::clean_names() %>% 
+  select(-perimeter_mean, -area_mean, -concave.points_mean, -radius_worst, -area_se, -perimeter_worst, -area_worst, -concave.points_worst, -texture_worst, -smoothness_worst, -compactness_se, -compactness_mean, -compactness_worst, -concavity_worst, -fractal_dimension_worst, -perimeter_se, -concave.points_se, -fractal_dimension_se, -symmetry_worst)
+
+y1 = as.matrix(cancer$diagnosis)
+x1 = scale(as.matrix(cancer[, 2:31]))
+
+
+```
 
