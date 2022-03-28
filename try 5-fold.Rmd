@@ -1,9 +1,10 @@
 ---
-title: "try 5-fold"
-author: "Yijing Tao yt2785"
-date: '2022-03-27'
+title: "5-fold cv"
+author: "Yijing Tao"
+date: "3/24/2022"
 output: html_document
 ---
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
@@ -12,8 +13,6 @@ library(glmnet)
 library(pdp)
 library(caret)
 library(modelr)
-library(pROC)
-library(stats)
 ```
 
 ## data preprocessing
@@ -35,13 +34,24 @@ data = cbind(read.csv(file = "breast-cancer.csv") %>% dplyr::select(diagnosis), 
   mutate(diagnosis = ifelse(diagnosis == "M", 1, 0))
 
 cancer = read.csv("breast-cancer.csv") %>% 
-    mutate(diagnosis = factor(diagnosis))
-  
+  janitor::clean_names() %>% 
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1)
 y = as.matrix(cancer$diagnosis)
 x = scale(as.matrix(cancer[, 2:31]))
+
+cancer_x = cancer %>% 
+  dplyr::select(-id,-diagnosis, -perimeter_mean, -area_mean, -concave_points_mean, -radius_worst, -area_se, -perimeter_worst, -area_worst, -concave_points_worst, -texture_worst, -smoothness_worst, -compactness_se, -compactness_mean, -compactness_worst, -concavity_worst, -fractal_dimension_worst, -perimeter_se, -concave_points_se, -fractal_dimension_se, -symmetry_worst)
+x2 = scale(as.matrix(cancer_x))
+
+n = dim(x2)[1]
+n_train = floor(n*0.8)
+
+y_train = as.matrix(y[1:n_train,], ncol = 1)
+y_test = as.matrix(y[(n_train + 1):n,], ncol = 1)
+x_train = x2[1:n_train,]
+x_test = x2[(n_train + 1):n,]
 ```
 
-## lassocd
 ```{r}
 soft_threshold <- function(beta, lambda) {
     sign(beta) * max(abs(beta) - lambda, 0)
@@ -62,9 +72,8 @@ getZ <- function(X, y, betavec, Px, W){
     return(Z)
 }
 
-
 lassoCD <- function(
-        X, y, lambda, init_beta, max_iter = 1e4, tol = 1e-8
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
 ){
     betavec <- init_beta
     N <- length(y)
@@ -85,89 +94,31 @@ lassoCD <- function(
             betaresj[j] <- 0
             Zresj <- X %*% betaresj
             betaj <- 
-                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/mean(W * X[,j] * X[,j])
+                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
             betavec[j] <- betaj
             loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
         }
-        #print(loss)
-        if(abs(prevloss - loss) < tol || loss < Inf){
+        # print(loss)
+        if(abs(prevloss - loss) < tol || loss > Inf){
             cont <- FALSE
         }
         res <- rbind(res, c(i, loss, betavec))
     }
     return(res)
 }
-
-# x1 = data2[1:50, 3:32]
-# y1 = data2[1:50, 2]
-# lassoCD(as.matrix(x1), y1, 0.5, c(rep(3, 30)), max_iter = 1e4, tol = 1e-8)
-
-coordinatelasso <- function(lambda, dat, s, tol=1e-10, maxiter = 200){
-    i <- 0 
-    pp <- length(s)
-    n <- length(dat$y)
-    betavec <- s
-    loglik <- 1e6
-    res <- c(0, loglik, betavec)
-    prevloglik <- Inf # To make sure it iterates 
-    while (i < maxiter && abs(loglik - prevloglik) > tol && loglik < inf) {
-        i <- i + 1 
-        prevloglik <- loglik
-        for (j in 1:pp) {
-            u <- dat$X %*% betavec
-            expu <- exp(u) 
-            prob <- expu/(expu+1)
-            w <- prob*(1-prob) # weighted
-            # avoid coeffcients diverging in order to achieve fitted  probabilities of 0 or 1.
-            w <- ifelse(abs(w-0) < 1e-5, 1e-5, w)
-            z <- u + (dat$y-prob)/w
-            # calculate noj
-            znoj <- dat$X[,-j] %*% betavec[-j]
-            # revise the formula to be z
-            betavec[j] <- soft_threshold(mean(w*(dat$X[,j])*(z - znoj)), lambda)/(sum(w*dat$X[,j]*dat$X[,j]))
-        }
-        loglik <- sum(w*(z-dat$X %*% betavec)^2)/(2*n) + lambda * sum(abs(betavec))
-        res <- rbind(res, c(i, loglik, betavec))}  
-    return(res)
-}
-
-lassoCD.predict <- function(betavec, X_new, y){
-    Py <- 1/(1 + exp(-(X_new %*% betavec)))
-    Pn <- 1-Py
-    res <- list(P_pos = Py, P_neg = Pn, res = Py > Pn)
-    res$res = as.numeric(res$res)
-    return(res)
-}
-
-set.seed(1)
-rowTrain <- createDataPartition(y = y,
-                                p = 0.7,
-                                list = FALSE)
-cancer$diagnosis = case_when(cancer$diagnosis == "M" ~ 1,
-                             TRUE ~ 0)
-trainx <- x[rowTrain,]
-trainx = cbind(rep(1,dim(trainx)[1]),trainx)
-trainy <- cancer$diagnosis[rowTrain,]
-testx <- x[-rowTrain,]
-testx = cbind(rep(1,dim(testx)[1]),testx)
-testy <- cancer$diagnosis[-rowTrain,]
-      fit = lassoCD(trainx, trainy, lambda = 0.5, init_beta = rep(0, 31))
-      betas = fit[nrow(fit),2:32]
-      pred.cd <- lassoCD.predict(betas, testx, testy)
-      pred.obs <- data.frame(pred = pred.cd$res, obs = testy)
-      roc <- roc(pred.obs$pred, pred.obs$obs)
-      auc <- roc$auc[1]
 ```
 
+
+## Cross-Validation
 ```{r}
 lambda.cv = function(lambdas, x, y, k, seed) {
   set.seed(seed)
   data = as.data.frame(cbind(x, y))
   folds = crossv_kfold(data, k = k)
   
-  start = rep(0, 31)
-  fold.mse <- vector()
-  fold.se <- vector()
+  start = rep(0, 12)
+  fold.auc <- vector()
+  #fold.se <- vector()
 
   for (j in 1:length(lambdas)) {
     fold.errors <- vector()
@@ -176,55 +127,47 @@ lambda.cv = function(lambdas, x, y, k, seed) {
       testrow = folds[i,2][[1]][[toString(i)]]$idx
       
       train.X = x[trainrow,] 
-      train.X = scale(as.matrix(cbind(rep(1,dim(train.X)[1]),train.X)))
-      test.X = x[testrow,]  
-      test.X = scale(as.matrix(cbind(rep(1,dim(test.X)[1]),test.X)))
+      train.X = cbind(rep(1,dim(train.X)[1]),train.X)
+      test.X = x[testrow,] 
+      test.X = cbind(rep(1,dim(test.X)[1]),test.X)
       
       train.y = y[trainrow,] 
       test.y = y[testrow,] 
       
       # Perform the logistic-LASSO
       fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
-      betas = fit[nrow(fit),2:32]
-      pred.cd <- lassoCD.predict(betas, test.X, test.y)
-      pred.obs <- data.frame(pred = pred.cd$res, obs = cancer$diagnosis[testrow,])
-      roc <- roc(pred.obs$pred, pred.obs$obs)
-      roc <- roc(test.y, pred)
+      betas = fit[nrow(fit),2:13]
+      u = test.X %*% betas
+      expu = exp(u)
+      prob = expu / (1 + expu)
+      # Calculate the test MSE for the fold
+      fold.errors[i] = mean(auc(test.y, prob))
     }
     start = betas
-    auc[j] <- roc$auc[1]
+    fold.auc[j] = mean(fold.errors)
+    #fold.se[j] = sqrt(var(fold.errors)/k)
   }
-  return(cbind(log.lambda = log(lambdas), auc))
+  return(cbind(log.lambda = log(lambdas), fold.auc))
 }
 
-lambda.seq = exp(seq(-2,-5, length=100))
+lambda.seq = exp(seq(-1,-10, length=100))
 
-cv.path = lambda.cv(lambda.seq, cancer[,3:32], cancer$diagnosis, 5, 2022)
+cv.path = lambda.cv(lambda.seq, x_train, y_train, 5, 11)
 cv.path = as.data.frame(cv.path)
-max.auc = max(cv.path$auc)
-max.lambda = cv.path[which(cv.path$auc == max.auc),]$log.lambda
+max.auc = max(cv.path$fold.auc)
+best.lambda = cv.path[which(cv.path$fold.auc == max.auc),]$log.lambda
 
-#cv.path %>%
-#  ggplot(data = ., aes(x = log.lambda, y = auc)) +
-#  geom_vline(xintercept = max.lambda) +
-#  geom_line(color = "red") +
-#  geom_errorbar(aes(ymin = fold.mse - fold.se, ymax = fold.mse + 
-#                      fold.se), color = "gray50") +
-#  labs(
-#   title = "Average Test Fold MSE as a function of lambda",
-#   x = "log(lambda)",
-#   y = "Average Test MSE"
-#   ) +
-# theme(plot.title = element_text(hjust = 0.5))
+cv.path %>%
+  ggplot(data = ., aes(x = log.lambda, y = fold.auc)) +
+  geom_vline(xintercept = best.lambda) +
+  geom_line(color = "red") 
+  #geom_errorbar(aes(ymin = fold.mse - fold.se, ymax = fold.mse + 
+                      #fold.se), color = "gray50") +
 
-exp(max.lambda)
+exp(best.lambda)
 ```
-## 5-Fold Cross Validation
-The test data is taken from the same data, but is not involved in the training, so that the model can be evaluated relatively objectively to match the data outside the training set. The evaluation of the model in the test data is commonly done by cross-validation. It divides the original data into K groups (K-Fold), and makes each subset of data into a test set separately, and the rest of the K-1 subset data as the training set, so that K models will be obtained. These K models are evaluated separately in the test set, and the final error MSE (Mean Squared Error) is summed and averaged to obtain the cross-validation error.
 
-Cross-validation makes effective use of the limited data and the evaluation results are as close as possible to the performance of the models on the test set, which can be used as an indicator for model optimization.
+```{r}
+glm(y ~ x2, family = binomial(link = "logit"))$bestTune
+```
 
-In order to find the optimal lambda, we use 5-fold cross validation. The dataset is divided into five subdatasets by using the *crossv_kfold* function. We combined 4 of them as the training data set, and the rest $\frac{1}{5}$ of them as the test data set each time. The optimal coefficients is then found five times by running the logit-LASSO on the training data set, leaving a different subset out each time. The subset left out is then used to estimate the model performance. This is done for all lambdas in the pre-defined sequence in order to search for the lambda with the highest average predictive ability. 
-We use MSE as the criteria to choose the best tuning parameter and corresponding model obtained from train data, and calculating MSE to evaluate the model performance in test dataset.
-
-After the 5-fold cross validation, we found that the best lambda is about $e^{-3.5152} = 0.0297$ in the optimal model when set.seed(2022). 
