@@ -21,15 +21,16 @@ library(glmnet)
 ```{r}
 cancer = read.csv("breast-cancer.csv") %>% 
   mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
-  select(-id)
+  dplyr::select(-id)
 
 y = as.matrix(cancer$diagnosis)
 x = cancer %>% 
-  select(-diagnosis, -perimeter_mean, -area_mean, -concave.points_mean, -radius_worst, 
+  dplyr::select(-diagnosis, -perimeter_mean, -area_mean, -concave.points_mean, -radius_worst, 
          -area_se, -perimeter_worst, -area_worst, -concave.points_worst, -texture_worst, 
          -smoothness_worst, -compactness_se, -compactness_mean, -compactness_worst, -concavity_worst, 
          -fractal_dimension_worst, -perimeter_se, -concave.points_se, -fractal_dimension_se, -symmetry_worst) %>% 
-  as.matrix() 
+  as.matrix()# %>% 
+  #scale()
 
 n = dim(x)[1]
 n_train = floor(n*0.8)
@@ -39,8 +40,8 @@ y_test = as.matrix(y[(n_train + 1):n,], ncol = 1)
 x_train = x[1:n_train,]
 x_test = x[(n_train + 1):n,]
 
-x_train_b0 = cbind(rep(1,nrow(x_train)),scale(x_train))
-x_test_b0 = cbind(rep(1,nrow(x_test)), scale(x_test))
+x_train_b0 = cbind(rep(1,nrow(x_train)),x_train)
+x_test_b0 = cbind(rep(1,nrow(x_test)), x_test)
 ```
 
 ## Logistic
@@ -160,7 +161,7 @@ lassoCD <- function(
             betaresj[j] <- 0
             Zresj <- X %*% betaresj
             betaj <- 
-                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
+                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/mean(W * X[,j] * X[,j])
             betavec[j] <- betaj
             loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
         }
@@ -174,100 +175,43 @@ lassoCD <- function(
 }
 
 
-coordinatelasso <- function(lambda, dat, s, tol=1e-10, maxiter = 200){
-    i <- 0 
-    pp <- length(s)
-    n <- length(dat$y)
-    betavec <- s
-    loglik <- 1e6
-    res <- c(0, loglik, betavec)
-    prevloglik <- Inf # To make sure it iterates 
-    while (i < maxiter && abs(loglik - prevloglik) > tol && loglik < inf) {
-        i <- i + 1 
-        prevloglik <- loglik
-        for (j in 1:pp) {
-            u <- dat$X %*% betavec
-            expu <- exp(u) 
-            prob <- expu/(expu+1)
-            w <- prob*(1-prob) # weighted
-            # avoid coeffcients diverging in order to achieve fitted  probabilities of 0 or 1.
-            w <- ifelse(abs(w-0) < 1e-5, 1e-5, w)
-            z <- u + (dat$y-prob)/w
-            # calculate noj
-            znoj <- dat$X[,-j] %*% betavec[-j]
-            # revise the formula to be z
-            betavec[j] <- soft_threshold(mean(w*(dat$X[,j])*(z - znoj)), lambda)/(mean(w*dat$X[,j]*dat$X[,j]))
-        }
-        loglik <- sum(w*(z-dat$X %*% betavec)^2)/(2*n) + lambda * sum(abs(betavec))
-        res <- rbind(res, c(i, loglik, betavec))}  
-    return(res)
-}
 ```
 
 
-## mse cv
-
 ```{r}
-lambda.cv = function(lambdas, x, y, k, seed) {
-  set.seed(seed)
-  data = as.data.frame(cbind(x, y))
-  folds = crossv_kfold(data, k = k)
-  
-  start = rep(0, ncol(x))
-  fold.mse <- vector()
-  fold.se <- vector()
-
-  for (j in 1:length(lambdas)) {
-    fold.errors <- vector()
-    for (i in 1:k) {
-      trainrow= folds[i,1][[1]][[toString(i)]]$idx
-      testrow = folds[i,2][[1]][[toString(i)]]$idx
-      
-      train.X = x[trainrow,] 
-      test.X = x[testrow,] 
-      
-      train.y = y[trainrow,] 
-      test.y = y[testrow,] 
-      
-      # Perform the logistic-LASSO
-      fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
-      betas = fit[nrow(fit),3:ncol(fit)]
-      u = test.X %*% betas
-      expu = exp(u)
-      prob = expu / (1 + expu)
-      # Calculate the test MSE for the fold
-      fold.errors[i] = mean((test.y - prob)^2)
+##### 3. coordinate-wise logistic lasso
+sfun <- function(beta,lambda) sign(beta) * max(abs(beta)-lambda, 0)
+coordinatelasso <- function(lambda, x, y, s, tol=1e-10, maxiter = 200){
+  i <- 0 
+  pp <- length(s)
+  n <- length(y)
+  betavec <- s
+  loglik <- 1e6
+  res <- c(0, loglik, betavec)
+  prevloglik <- Inf # To make sure it iterates 
+  while (i < maxiter && abs(loglik - prevloglik) > tol && loglik < Inf) {
+    i <- i + 1 
+    prevloglik <- loglik
+    for (j in 1:pp) {
+      u <- x %*% betavec
+      expu <- exp(u) 
+      prob <- expu/(expu+1)
+      w <- prob*(1-prob) # weighted
+      # avoid coeffcients diverging in order to achieve fitted  probabilities of 0 or 1.
+      w <- ifelse(abs(w-0) < 1e-5, 1e-5, w)
+      z <- u + (y-prob)/w
+      # calculate noj
+      znoj <- x[,-j] %*% betavec[-j]
+      # revise the formula to be z
+      betavec[j] <- sfun(mean(w*(x[,j])*(z - znoj)), lambda)/(mean(w*x[,j]*x[,j]))
     }
-    start = betas
-    fold.mse[j] = mean(fold.errors)
-    fold.se[j] = sqrt(var(fold.errors)/k)
-  }
-  return(cbind(log.lambda = log(lambdas), fold.mse, fold.se))
+    loglik <- sum(w*(z-x %*% betavec)^2)/(2*n) + lambda * sum(abs(betavec))
+    res <- rbind(res, c(i, loglik, betavec))}  
+  return(res)
 }
+corres <- coordinatelasso(lambda = 0, x_train_b0, y_train, s = rep(0, dim(x_train_b0)[2]) ,maxiter = 2000)
 
-lambda.seq = exp(seq(-2,-12, length=1000))
-
-cv.path = lambda.cv(lambda.seq, x_train_b0, y_train, 5, 2022)
-cv.path = as.data.frame(cv.path)
-min.mse = min(cv.path$fold.mse)
-min.lambda = cv.path[which(cv.path$fold.mse == min.mse),]$log.lambda
-
-cv.path %>%
-  ggplot(data = ., aes(x = log.lambda, y = fold.mse)) +
-  geom_vline(xintercept = min.lambda) +
-  geom_line(color = "red") +
-  geom_errorbar(aes(ymin = fold.mse - fold.se, ymax = fold.mse + 
-                      fold.se), color = "gray50") +
-  labs(
-   title = "Average Test Fold MSE as a function of lambda",
-   x = "log(lambda)",
-   y = "Average Test MSE"
-   ) +
- theme(plot.title = element_text(hjust = 0.5))
-
-exp(min.lambda)
-
-min.lambda
+corres[nrow(corres),]
 ```
 
 ## auc cv
@@ -295,7 +239,7 @@ lambda.cv = function(lambdas, x, y, k) {
       test.y = y[testrow,] 
       
       # Perform the logistic-LASSO
-      fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
+      fit = coordinatelasso(lambda = lambdas[j], train.X, train.y, s = start, maxiter = 2000)
       betas = fit[nrow(fit),3:ncol(fit)]
       u = test.X %*% betas
       expu = exp(u)
@@ -310,7 +254,7 @@ lambda.cv = function(lambdas, x, y, k) {
   return(cbind(log.lambda = log(lambdas), fold.auc))
 }
 
-lambda.seq = exp(seq(-1,-12, length=500))
+lambda.seq = exp(seq(-2,-13, length=500))
 
 cv.path = lambda.cv(lambda.seq, x_train_b0, y_train, 5)
 cv.path = as.data.frame(cv.path)
@@ -326,17 +270,21 @@ cv.path %>%
   geom_line(color = "red") 
 
 
-mean(exp(best.lambda))
+exp(best.lambda)
 
 best.lambda
 ```
+
+
+
+
 
 ## caret
 
 ```{r}
 library(caret)
 
-set.seed(8160)
+set.seed(9543)
 
 ctrl <- trainControl(method = "cv",
                      number = 5,
@@ -365,25 +313,19 @@ model.glmn$bestTune
 ```
 
 
-## Compare with full model
-```{r}
-lassoCD.predict <- function(betavec, X_new, y){
-    Py <- 1/(1 + exp(-(X_new %*% betavec)))
-    Pn <- 1-Py
-    res <- list(P_pos = Py, P_neg = Pn, res = Py > Pn)
-    res$res = as.numeric(res$res)
-    return(res)
-}
 
-NR.lasso.ans = lassoCD(x_train_b0, y_train, lambda = exp(best.lambda), init_beta = rep(0, ncol(x_train_b0)))
-```
 
 ## coefficients
 
 ```{r}
+# newton rapson
 NR.coef = ans[nrow(ans), 3:ncol(ans)] %>% t()
+
+# logistic lasso
+NR.lasso.ans = coordinatelasso(lambda = exp(best.lambda), x_train_b0, y_train, s = rep(0, ncol(x_train_b0)), maxiter = 2000)
 NR.lasso.coef = NR.lasso.ans[nrow(NR.lasso.ans), 3:ncol(NR.lasso.ans)]
 
+# glm
 fit.glm = glm(y_train ~ x_train, family = binomial(link = "logit"))
 glm.coef = fit.glm$coefficients %>% as.data.frame()
 
@@ -395,6 +337,139 @@ colnames(logistics.coef) = c("caret-glmnet", "glm package", "Newton-Raphson", "L
 logistics.coef %>% 
   select("glm package", "Newton-Raphson", "Logistic-LASSO", "caret-glmnet") %>% 
   knitr::kable()
+```
+
+## Compare with full model
+```{r}
+lassoCD.predict <- function(betavec, X_new, y){
+    Py <- 1/(1 + exp(-(X_new %*% betavec)))
+    y.pred = rep(0, nrow(y))
+    y.pred[Py > 0.5] = 1
+    return(y.pred)
+}
+
+
+```
+
+## test performance
+
+- test
+
+```{r}
+y.pred.log.lasso = lassoCD.predict(NR.lasso.coef, x_test_b0, y_test)
+y.pred.log = lassoCD.predict(NR.coef, x_test_b0, y_test)
+y.pred.glm = lassoCD.predict(as.matrix(glm.coef), x_test_b0, y_test)
+y.pred.glmn = lassoCD.predict(as.matrix(NR.lasso.coef), x_test_b0, y_test)
+```
+
+
+```{r, warning=FALSE}
+roc.log.lasso <- roc(y_test, y.pred.log.lasso)
+roc.log = roc(y_test, y.pred.log)
+roc.glmn = roc(y_test, y.pred.glmn)
+plot(roc.log.lasso, legacy.axes = TRUE, print.auc = TRUE)
+plot(roc.log, legacy.axes = TRUE, print.auc = TRUE)
+plot(roc.glmn, legacy.axes = TRUE, print.auc = TRUE)
+```
+
+```{r, warning=FALSE}
+auc <- c(roc.log$auc[1], roc.log.lasso$auc[1], roc.glmn$auc[1])
+
+modelNames <- c("Newton-Raphson","Newton-Raphson LASSO","glmnet")
+
+ggroc(list(roc.log, roc.log.lasso, roc.glmn), legacy.axes = TRUE, size = 1, alpha = 0.5) + 
+  scale_color_discrete(labels = paste0(modelNames, " (", round(auc,3),")"),
+                       name = "Models (AUC)") +
+  geom_abline(intercept = 0, slope = 1, color = "grey") +
+  theme_bw() +
+  theme(text = element_text(size = 14))
+```
+
+## CV performance
+
+```{r}
+lambda.cv.2 = function(lambdas, x, y, k, coefs) {
+  set.seed(2022)
+  data = as.data.frame(cbind(x, y))
+  folds = crossv_kfold(data, k = k)
+  
+  start = coefs
+ 
+  fold.errors <- vector()
+  for (i in 1:k) {
+    trainrow= folds[i,1][[1]][[toString(i)]]$idx
+    testrow = folds[i,2][[1]][[toString(i)]]$idx
+    
+    train.X = x[trainrow,] 
+    test.X = x[testrow,] 
+    
+    train.y = y[trainrow,] 
+    test.y = y[testrow,] 
+    
+    # Perform the logistic-LASSO
+    fit = coordinatelasso(lambda = lambdas, train.X, train.y, s = start, maxiter = 2000)
+    betas = fit[nrow(fit),3:ncol(fit)]
+    u = test.X %*% betas
+    expu = exp(u)
+    prob = expu / (1 + expu)
+    # Calculate the test MSE for the fold
+    fold.errors[i] = mean(auc(test.y, prob))
+  }
+  return(fold.errors)
+}
+```
+
+
+```{r}
+cv.roc.log.lasso = lambda.cv.2(exp(best.lambda), x_train_b0, y_train, k = 5, coefs = NR.lasso.coef)
+cv.roc.log = lambda.cv.2(0, x_train_b0, y_train, k = 5, coefs = NR.coef)
+cv.roc.glmn = model.glmn$resample$ROC
+```
+
+
+```{r, fig.width=8, fig.height=4}
+
+df = tibble(
+  AUC = c(cv.roc.log, cv.roc.log.lasso, cv.roc.glmn),
+  model = c(rep("Newton Raphson", 5), rep("Logistic-LASSO", 5), rep("caret-glmnet",5))
+)
+
+df %>% 
+  ggplot(aes(fill = model)) +
+  geom_boxplot(aes(x = AUC, y = model)) +
+  scale_fill_manual(values=wes_palettes$GrandBudapest1[c(1, 2, 4)]) +
+  theme_bw() +
+  theme(text = element_text(size = 14))
+```
+
+
+
+```{r}
+path <- function(X, y, lambdaseq){
+    init_beta <- rep(0, dim(X)[2])
+    betas <- NULL
+    for (i in 1:length(lambdaseq)) {
+        cd.result = coordinatelasso(lambda = lambdaseq[i], X, y, s = init_beta, maxiter = 2000)
+        last_beta <- cd.result[nrow(cd.result),3:dim(cd.result)[2]]
+        init_beta <- last_beta
+        betas <- rbind(betas,c(last_beta))
+        i <- i + 1
+    }
+    return(data.frame(cbind(lambdaseq,betas)))
+}
+path.out <- path(x_train_b0, y_train, lambdaseq = exp(seq(-2,-13, length=100)))
+colnames(path.out) <- c("lambda","intercept",colnames(x_train_b0)[2:12])
+# plot a path of solutions
+path.plot <- path.out %>%
+  gather(key = par, value = estimate, c(2:dim(path.out)[2])) %>% 
+  ggplot(aes(x = log(lambda), y = estimate, group = par, col = par)) +
+  geom_line()+
+  ggtitle("A path of solutions with a sequence of descending lambda's") +
+  xlab("log(Lambda)") + 
+  ylab("Estimate") +
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size = 6))
+path.plot + theme_bw()
 ```
 
 
