@@ -157,9 +157,7 @@ lassoCD <- function(
             W <- getW(Px)
             W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
             Z <- getZ(X, y, betavec, Px, W)
-            betaresj <- betavec
-            betaresj[j] <- 0
-            Zresj <- X %*% betaresj
+            Zresj <- X[,-j] %*% betavec[-j]
             betaj <- 
                 soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/mean(W * X[,j] * X[,j])
             betavec[j] <- betaj
@@ -239,7 +237,7 @@ lambda.cv = function(lambdas, x, y, k) {
       test.y = y[testrow,] 
       
       # Perform the logistic-LASSO
-      fit = coordinatelasso(lambda = lambdas[j], train.X, train.y, s = start, maxiter = 2000)
+      fit = coordinatelasso(lambda = lambdas[j], train.X, train.y, s = start, maxiter = 500)
       betas = fit[nrow(fit),3:ncol(fit)]
       u = test.X %*% betas
       expu = exp(u)
@@ -255,7 +253,7 @@ lambda.cv = function(lambdas, x, y, k) {
 }
 
 lambda.seq = exp(seq(-2,-13, length=500))
-
+ 
 cv.path = lambda.cv(lambda.seq, x_train_b0, y_train, 5)
 cv.path = as.data.frame(cv.path)
 max.auc = max(cv.path$fold.auc)
@@ -277,7 +275,71 @@ best.lambda
 
 
 
+```{r}
+best_beta <- coordinatelasso(lambda = exp(best.lambda), x_train_b0, y_train, s = rep(0,dim(x_train_b0)[2]), maxiter = 500)
+```
 
+```{r cv_using_lassoCD}
+lambda.cv.lassoCD = function(lambdas, x, y, k) {
+  set.seed(2022)
+  data = as.data.frame(cbind(x, y))
+  folds = crossv_kfold(data, k = k)
+  
+  start = rep(0, ncol(x))
+  fold.auc <- vector()
+  #fold.se <- vector()
+
+  for (j in 1:length(lambdas)) {
+    fold.errors <- vector()
+    for (i in 1:k) {
+      trainrow= folds[i,1][[1]][[toString(i)]]$idx
+      testrow = folds[i,2][[1]][[toString(i)]]$idx
+      
+      train.X = x[trainrow,] 
+      test.X = x[testrow,] 
+      
+      train.y = y[trainrow,] 
+      test.y = y[testrow,] 
+      
+      # Perform the logistic-LASSO
+      fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
+      betas = fit[nrow(fit),3:ncol(fit)]
+      u = test.X %*% betas
+      expu = exp(u)
+      prob = expu / (1 + expu)
+      # Calculate the test MSE for the fold
+      fold.errors[i] = mean(auc(test.y, prob))
+    }
+    start = betas
+    fold.auc[j] = mean(fold.errors)
+    #fold.se[j] = sqrt(var(fold.errors)/k)
+  }
+  return(cbind(log.lambda = log(lambdas), fold.auc))
+}
+
+lambda.seq.lassoCD = exp(seq(-2,-13, length=500))
+ 
+cv.path.lassoCD = lambda.cv.lassoCD(lambda.seq.lassoCD, x_train_b0, y_train, 5)
+cv.path.lassoCD = as.data.frame(cv.path.lassoCD)
+max.auc.lassoCD = max(cv.path.lassoCD$fold.auc)
+
+max.auc.lassoCD
+
+best.lambda.lassoCD = cv.path.lassoCD[which(cv.path.lassoCD$fold.auc == max.auc.lassoCD),]$log.lambda
+
+cv.path.lassoCD %>%
+  ggplot(data = ., aes(x = log.lambda, y = fold.auc)) +
+  geom_vline(xintercept = best.lambda.lassoCD) +
+  geom_line(color = "red") 
+
+
+exp(mean(best.lambda.lassoCD))
+
+best.lambda.lassoCD
+```
+```{r}
+best_beta.lassoCD <- lassoCD( x_train_b0, y_train,exp(mean(best.lambda.lassoCD)), init_beta = rep(2,dim(x_train_b0)[2]))
+```
 
 ## caret
 
