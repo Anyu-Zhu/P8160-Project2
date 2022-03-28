@@ -171,7 +171,7 @@ cv.path %>%
 exp(best.lambda)
 
 x_train = cbind(rep(1,dim(x_train)[1]),x_train)
-bestfit = lassoCD(x_train, y_train, lambda = exp(best.lambda), init_beta = rep(0,12))
+bestfit = lassoCD(x_train, y_train, lambda = exp(best.lambda), init_beta = rep(1,12))
 ```
 
 ```{r}
@@ -193,6 +193,6 @@ model.glmn <- train(x = x_train,
                    metric = "ROC",
                    trControl = ctrl)
 model.glmn$bestTune
-glmn.coef = coef(model.glmn$finalModel)
+glmn.coef = coef(model.glmn$finalModel, model.glmn$bestTune$lambda)
 ```
 
