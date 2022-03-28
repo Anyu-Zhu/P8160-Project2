@@ -81,7 +81,7 @@ lassoCD <- function(
             betaresj[j] <- 0
             Zresj <- X %*% betaresj
             betaj <- 
-                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/mean(W * X[,j] * X[,j])
+                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
             betavec[j] <- betaj
             loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
         }
@@ -154,7 +154,7 @@ lambda.cv = function(lambdas, x, y, k, seed) {
       
       # Perform the logistic-LASSO
       fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
-      betas = fit[nrow(fit),2:13]
+      betas = fit[nrow(fit),3:14]
       u = test.X %*% betas
       expu = exp(u)
       prob = expu / (1 + expu)
@@ -193,7 +193,7 @@ exp(min.lambda)
 
 ## Cross-Validation
 ```{r}
-lambda.cv = function(lambdas, x, y, k, seed) {
+lambda.cv2 = function(lambdas, x, y, k, seed) {
   set.seed(seed)
   data = as.data.frame(cbind(x, y))
   folds = crossv_kfold(data, k = k)
@@ -218,10 +218,11 @@ lambda.cv = function(lambdas, x, y, k, seed) {
       
       # Perform the logistic-LASSO
       fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
-      betas = fit[nrow(fit),2:13]
+      betas = fit[nrow(fit),3:14]
       u = test.X %*% betas
       expu = exp(u)
       prob = expu / (1 + expu)
+      pred <- vector()
       # Calculate the test MSE for the fold
       fold.errors[i] = mean(auc(test.y, prob))
     }
@@ -230,16 +231,17 @@ lambda.cv = function(lambdas, x, y, k, seed) {
     #fold.se[j] = sqrt(var(fold.errors)/k)
   }
   return(cbind(log.lambda = log(lambdas), fold.auc))
+  return(prob)
 }
 
 lambda.seq = exp(seq(-1,-10, length=100))
 
-cv.path = lambda.cv(lambda.seq, x_train, y_train, 5, 2022)
-cv.path = as.data.frame(cv.path)
-max.auc = max(cv.path$fold.auc)
-best.lambda = cv.path[which(cv.path$fold.auc == max.auc),]$log.lambda
+cv.path2 = lambda.cv2(lambda.seq, x_train, y_train, 5, 2022)
+cv.path2 = as.data.frame(cv.path2)
+max.auc = max(cv.path2$fold.auc)
+best.lambda = cv.path[which(cv.path2$fold.auc == max.auc),]$log.lambda
 
-cv.path %>%
+cv.path2 %>%
   ggplot(data = ., aes(x = log.lambda, y = fold.auc)) +
   geom_vline(xintercept = best.lambda) +
   geom_line(color = "red") 
