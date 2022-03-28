@@ -177,6 +177,33 @@ bestfit = lassoCD(x_train, y_train, lambda = exp(best.lambda), init_beta = rep(1
 ```{r}
 glm(y ~ x2, family = binomial(link = "logit"))$bestTune
 ```
+```{r path_plot}
+path <- function(X, y, lambdaseq){
+    init_beta <- rep(0, dim(X)[2])
+    betas <- NULL
+    for (i in 1:length(lambdaseq)) {
+        cd.result <- lassoCD(X, y, lambda = lambdaseq[i], init_beta = init_beta)
+        last_beta <- cd.result[nrow(cd.result),3:dim(cd.result)[2]]
+        init_beta <- last_beta
+        betas <- rbind(betas,c(last_beta))
+        i <- i + 1
+    }
+    return(data.frame(cbind(lambdaseq,betas)))
+}
+path.out <- path(x_train, y_train,lambdaseq = exp(seq(1,-10, length=100)))
+colnames(path.out) <- c("lambda","intercept",colnames(x_train)[2:12])
+# plot a path of solutions
+path.plot <- path.out %>%
+  gather(key = par, value = estimate, c(2:dim(path.out)[2])) %>% 
+  ggplot(aes(x = log(lambda), y = estimate, group = par, col = par)) +
+  geom_line()+
+  ggtitle("A path of solutions with a sequence of descending lambda's") +
+  xlab("log(Lambda)") + 
+  ylab("Estimate") +
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size = 6))
+path.plot
+```
 
 ```{r}
 library(glmnet)
