@@ -73,7 +73,7 @@ getZ <- function(X, y, betavec, Px, W){
 }
 
 lassoCD <- function(
-        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
+        X, y, lambda = 0.5, init_beta = NULL, max_iter = 500, tol = 1e-8
 ){
     betavec <- init_beta
     N <- length(y)
@@ -94,7 +94,7 @@ lassoCD <- function(
             betaresj[j] <- 0
             Zresj <- X %*% betaresj
             betaj <- 
-                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
+                soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/mean(W * X[,j] * X[,j])
             betavec[j] <- betaj
             loss <- (1/(2*N))*sum(W * (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
         }
@@ -140,6 +140,10 @@ lambda.cv = function(lambdas, x, y, k, seed) {
       u = test.X %*% betas
       expu = exp(u)
       prob = expu / (1 + expu)
+      prob_neg = 1-prob
+      pred_y = ifelse(prob>prob_neg,1,0)
+      mis_class = sum(pred_y != test.y)
+      
       # Calculate the test MSE for the fold
       fold.errors[i] = mean(auc(test.y, prob))
     }
@@ -165,9 +169,30 @@ cv.path %>%
                       #fold.se), color = "gray50") +
 
 exp(best.lambda)
+
+x_train = cbind(rep(1,dim(x_train)[1]),x_train)
+bestfit = lassoCD(x_train, y_train, lambda = exp(best.lambda), init_beta = rep(0,12))
 ```
 
 ```{r}
 glm(y ~ x2, family = binomial(link = "logit"))$bestTune
+```
+
+```{r}
+library(glmnet)
+library(caret)
+
+ctrl <- trainControl(method = "cv",
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+glmnGrid <- expand.grid(alpha = 1, lambda = exp(seq(-1,-10, length = 100)))
+model.glmn <- train(x = x_train,
+                   y = as.factor(ifelse(y_train == 1, "pos", "neg")),
+                   method = "glmnet",
+                   tuneGrid = glmnGrid,
+                   metric = "ROC",
+                   trControl = ctrl)
+model.glmn$bestTune
+glmn.coef = coef(model.glmn$finalModel)
 ```
 
