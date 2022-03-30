@@ -26,32 +26,33 @@ n_b = n_obs - n_m
 
 ## Introduction
 
-### Objective
-The goal of the project is to build a predictive model based on logistic regression to facilitate cancer diagnosis. We first build a logistic model to classify the images, then developed a Newton-Raphson algorithm to estimate the parameters of the logistic model. Then, we built a logistic-LASSO model to select features. Finally, we applied 5-fold cross-validation to select the best $\lambda$ for the logistic-LASSO model. 
+### Background and Objective
+Breast cancer mainly occurs in middle-aged and older women. The median age at the time of breast cancer diagnosis is 62. This means half of the women who developed breast cancer are 62 years of age or younger when they are diagnosed. The goal of the project is to build a predictive model based on logistic regression to facilitate cancer diagnosis. We first build a logistic model to classify the images, then developed a Newton-Raphson algorithm to estimate the parameters of the logistic model. Then, we built a logistic-LASSO model to select features. Finally, we applied 5-fold cross-validation to select the best $\lambda$ for the logistic-LASSO model. 
 
-### Dataset
+### Data Preprocessing
 The dataset 'breast-cancer'we used contains 569 rows and 32 columns. The variable `diagnosis` identifies if the image is coming from cancer tissue or benign. We labeled `malignant` as 1 and `benign` as 0. In total there are 212 malignant cases and 357 benign cases. There are 30 variables corresponding to mean, standard deviation and the largest values (points on the tails) of the distributions of 10 features: radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, and fractal dimension.
 
-The distribution of mean value of the 10 features among malignant cases and benign cases is shown in the plot below (Figure 1).
-
-```{r}
-featurePlot(x = cancer[, 3:12],
-            y = cancer$diagnosis,
-            par.strip.text=list(cex=0.7),
-            scales = list(x = list(relation = "free", font = 0.8),
-                          y = list(relation = "free"), font = 0.8),
-            plot = "density", pch = "|", adjust = 1.5,
-            auto.key = list(columns = 2))
-```
-
-Figure 2 displays the correlation between variables. We can see there exists multicollinearity in the dataset. (?? Put this into discussion ??)
+Figure q displays the correlation between variables. We can see the correlation coefficient is large between several pairs of variables, which will potentially cause the problem of not converging in Newton-Raphson algorithm and Logistic Lasso model.  
 
 ```{r}
 cancer_numeric = cancer[, 3:32]
 corrplot(cor(cancer_numeric), method = 'color', tl.col = "blue", tl.cex = 0.5, 
-         tl.srt = 45, title = "Figure 2: Correlation Plot", mar=c(0,0,1,0))
+         tl.srt = 45, title = "Figure 1: Correlation plot of all variables", mar=c(0,0,1,0))
 ```
 
+To reduce the multicolinearity effect, we conducted feature selection by removing variables with correlation coefficient > 0.7 and keep the rest 11 variables. After the adjustment, the correlation plot between variables change to:
+
+```{r}
+x = read.csv("breast-cancer.csv") %>% 
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
+  select(-id) %>% 
+  select(radius_mean, texture_mean, smoothness_mean, concavity_mean, symmetry_mean, fractal_dimension_mean, radius_se, texture_se, smoothness_se, concavity_se, symmetry_se)
+
+corrplot(cor(x), method = "color", tl.col = "blue", tl.srt = 60, tl.cex = 0.7,
+         title = "Figure 2: Correlation plot after feature selection", mar=c(0,0,1,0))
+```
+
+We standardized the data by the `scale()` function in R, take the first 80% of observations as training dataset, and the rest 20% of observations as testing dataset for model comparison.
 
 ## Method
 
