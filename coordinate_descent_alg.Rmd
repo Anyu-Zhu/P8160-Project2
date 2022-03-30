@@ -61,7 +61,7 @@ lassoCD <- function(
             #Wresj <- ifelse(abs(getW(Presj)) < 1e-5, 1e-5, getW(Presj))
             #Zresj <- getZ(X, y, betaresj, Presj, Wresj)
             Zresj <- X %*% betaresj
-            betaj <- soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
+            betaj <- soft_threshold(sum(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
             betavec[j] <- betaj
             loss <- (1/(2*N))*sum(W * (Z - Zresj)^2) + lambda * sum(abs(betavec))
         }
@@ -76,84 +76,6 @@ lassoCD <- function(
 
 ```
 \newpage
-```{r eval=FALSE, tidy=FALSE}
-# define soft_threshold, getP, getW, getZ
-
-lassoCD <- function(
-        X, y, lambda = 0.5, init_beta = NULL, max_iter = 500, tol = 1e-8
-){
-    betavec <- init_beta
-    N <- length(y)
-    i <- 0
-    loss <- 1e5
-    prevloss <- Inf
-    res <- c(0, loss, betavec)
-    cont <- TRUE
-    while(i <= max_iter && cont){
-        i <- i + 1
-        prevloss <- loss
-        for(j in 1:length(betavec)){
-            Z <- getZ(X, y, betavec, Px, W)
-            # setting beta_j to 0
-            betaresj <- betavec
-            betaresj[j] <- 0
-            Zresj <- getZ(X, y, betaresj, Presj, Wresj)
-            # update beta_j by solving penalized weighted least-square
-            betaj <- soft_threshold(mean(W * X[,j] * (Z - Zresj)), lambda)/sum(W * X[,j] * X[,j])
-            betavec[j] <- betaj
-            loss <- (1/(2*N))*sum(W * (Z - Zresj)^2) + lambda * sum(abs(betavec))
-        }
-        # convergency
-        if(abs(prevloss - loss) < tol || loss > Inf){
-            cont <- FALSE
-        }
-        res <- rbind(res, c(i, loss, betavec))
-    }
-    return(res)
-}
-```
-
-
-
-```{r CD_lasso_mtx}
-## matrix version ##
-#lassoCD.matrix <- function(
-#        X, y, lambda = 0.5, init_beta = NULL, max_iter = 1e4, tol = 1e-8
-#){
-#    betavec <- init_beta
-#    N <- length(y)
-#    i <- 0
-#    loss <- 1e5
-#    prevloss <- Inf
-#    res <- c(0, loss, betavec)
-#    cont <- TRUE
-#    while(i <= max_iter && cont){
-#        i <- i + 1
-#        prevloss <- loss
-#        for(j in 1:length(betavec)){
-#            Px <- getP(X, betavec)
-#            W <- getW(Px)
-#            #W <- ifelse(abs(W-0) < 1e-5, 1e-5, W)
-#            Wdiag <- diag(c(W), N, N)
-#            Z <- getZ(X, y, betavec, Px, W)
-#            betaresj <- betavec
-#            betaresj[j] <- 0
-#            Zresj <- X %*% betaresj
-#            betaj <- 
-#                soft_threshold((1/N) * (t(X[,j]) %*% Wdiag %*% (Z-(X %*% betaresj))),
-#                               lambda)/(t(X[,j]) %*% Wdiag %*% X[,j])
-#            betavec[j] <- betaj
-#            loss <- (1/(2*N))*sum(Wdiag %*% (Z - X %*% betavec)^2) + lambda * sum(abs(betavec))
-#        }
-#        print(loss)
-#        if(abs(prevloss - loss) < tol || loss > Inf){
-#            cont <- FALSE
-#        }
-#        res <- rbind(res, c(i, loss, betavec))
-#    }
-#    return(res)
-#}
-```
 
 ```{r for_CD_lasso_pre}
 lassoCD.predict <- function(betavec, X_new, y){
@@ -176,7 +98,7 @@ sqrt(var(cancer$radius_mean))
 
 cancer$diagnosis = case_when(cancer$diagnosis == "M" ~ 1,
                              TRUE ~ 0)
-data.cancer = data.frame(cancer[3:32])
+data.cancer = data.frame(scale(cancer[3:32]))
 data.cancer["intercept"] = 1
 data.cancer = as.matrix(data.cancer)
 
