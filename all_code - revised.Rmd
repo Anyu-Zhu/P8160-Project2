@@ -32,7 +32,9 @@ library(glmnet)
 ## Data pre-processing
 ```{r}
 normalize <- function(col){
-    return((col - mean(col))/sd(col))
+    mean = mean(col)
+    std = sd(col)
+    return((col - mean)/std)
 }
 cancer = read.csv("breast-cancer.csv") %>% 
   mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
@@ -44,9 +46,8 @@ x = cancer %>%
          -area_se, -perimeter_worst, -area_worst, -concave.points_worst, -texture_worst, 
          -smoothness_worst, -compactness_se, -compactness_mean, -compactness_worst, -concavity_worst, 
          -fractal_dimension_worst, -perimeter_se, -concave.points_se, -fractal_dimension_se, -symmetry_worst) %>% 
-  as.matrix() %>% 
-  normalize()
-
+    map_df(.x = ., normalize) %>% as.matrix() 
+colMeans(x)
 n = dim(x)[1]
 n_train = floor(n*0.8)
 
