@@ -1,25 +1,12 @@
 ---
-title: "All code"
-author: "Anyu Zhu"
+title: "Predictive Model Based on Logistic Regression for Cancer Diagnosis"
+author: "Yijing Tao; Renjie Wei; Jibei Zheng; Haolin Zhong; Anyu Zhu"
 date: "3/27/2022"
 output: pdf_document
 ---
 
-
-
-## 5-Fold Cross Validation
-The test data is taken from the same data, but is not involved in the training, so that the model can be evaluated relatively objectively to match the data outside the training set. The evaluation of the model in the test data is commonly done by cross-validation. It divides the original data into K groups (K-Fold), and makes each subset of data into a test set separately, and the rest of the K-1 subset data as the training set, so that K models will be obtained. These K models are evaluated separately in the test set, and the final error MSE (Mean Squared Error) is summed and averaged to obtain the cross-validation error.
-
-![Caption for the picture.](\cv_principle.png)
-In order to find the best lambda, we use 5-fold cross validation. The dataset is divided into five subdatasets by using the *crossv_kfold* function. We combined 4 of them as the training data set, and the rest $\frac{1}{5}$ of them as the test data set each time. The optimal coefficients is then found five times by running the logit-LASSO on the training data set, leaving a different subset out each time. The subset left out is then used to estimate the model performance. This is done for all lambdas in the pre-defined sequence in order to search for the lambda with the highest average predictive ability. 
-We use AUC as the criteria to choose the best tuning parameter and corresponding model obtained from train data since the response of this data set is binary. We then calculating AUC to evaluate the model performance in test dataset and choose the best lambda whose AUC is the biggest.
-
-After the 5-fold cross validation, we found that the best lambda is about $e^{-1.273} = 0.280$ in the optimal model when set.seed(2022). 
-
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
-
+```{r setup, include=FALSE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 
 library(tidyverse)
 library(ggplot2)
@@ -27,10 +14,99 @@ library(caret)
 library(modelr)
 library(pROC)
 library(glmnet)
+library(corrplot)
 ```
 
-## Data pre-processing
+```{r, echo=FALSE}
+cancer = read.csv("breast-cancer.csv") %>% 
+  mutate(diagnosis = factor(diagnosis))
+
+n_obs = nrow(cancer)
+n_var = ncol(cancer)
+n_m = sum(cancer$diagnosis == "M")
+n_b = n_obs - n_m
+```
+
+## Introduction
+
+### Background and Objective
+Breast cancer mainly occurs in middle-aged and older women. The median age at the time of breast cancer diagnosis is 62. This means half of the women who developed breast cancer are 62 years of age or younger when they are diagnosed. The goal of the project is to build a predictive model based on logistic regression to facilitate cancer diagnosis. We first build a logistic model to classify the images, then developed a Newton-Raphson algorithm to estimate the parameters of the logistic model. Then, we built a logistic-LASSO model to select features. Finally, we applied 5-fold cross-validation to select the best $\lambda$ for the logistic-LASSO model. 
+
+### Data Preprocessing
+The dataset 'breast-cancer'we used contains 569 rows and 32 columns. The variable `diagnosis` identifies if the image is coming from cancer tissue or benign. We labeled `malignant` as 1 and `benign` as 0. In total there are 212 malignant cases and 357 benign cases. There are 30 variables corresponding to mean, standard deviation and the largest values (points on the tails) of the distributions of 10 features: radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, and fractal dimension.
+
+Figure q displays the correlation between variables. We can see the correlation coefficient is large between several pairs of variables, which will potentially cause the problem of not converging in Newton-Raphson algorithm and Logistic Lasso model.  
+
+```{r, echo=FALSE, message=FALSE, fig.height=4, fig.width=6}
+cancer_numeric = cancer[, 3:32]
+corrplot(cor(cancer_numeric), method = 'color', tl.col = "blue", tl.cex = 0.5, 
+         tl.srt = 45, title = "Figure 1: Correlation plot of all variables", mar=c(0,0,1,0))
+```
+
+To reduce the multicolinearity effect, we conducted feature selection by removing variables with correlation coefficient > 0.7 and keep the rest 11 variables. After the adjustment, the correlation plot between variables change to:
+
+```{r, echo=FALSE, message=FALSE, fig.height=4, fig.width=6}
+x = read.csv("breast-cancer.csv") %>% 
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
+  select(-id) %>% 
+  select(radius_mean, texture_mean, smoothness_mean, concavity_mean, symmetry_mean, fractal_dimension_mean, radius_se, texture_se, smoothness_se, concavity_se, symmetry_se)
+
+corrplot(cor(x), method = "color", tl.col = "blue", tl.srt = 60, tl.cex = 0.7,
+         title = "Figure 2: Correlation plot after feature selection", mar=c(0,0,1,0))
+```
+
+We standardized the data by the `scale()` function in R, take the first 80% of observations as training dataset, and the rest 20% of observations as testing dataset for model comparison.
+
+## Method
+
+## Logistic Model
+
+Take $Y_i$ as the response of $i_{th}$ observation and follows binary distribution $Bin(\pi_i)$. $\pi_i$ is the probability of $i_{th}$ observation being malignant. By applying the logit link: 
+$$g(\mu)=\operatorname{logit}(\mu)=\log \frac{\mu}{1-\mu}$$
+we have the logistic regression model:
+$$\log \frac{\pi_{i}}{1-\pi_{i}}=X_{i} \beta$$
+Thus we have the likelihood function of logistic regression
+$$L(\pi)=\prod_{i=1}^{n} f\left(y_{i}\right)=\prod_{i=1}^{n} \pi_{i}^{y_{i}}\left(1-\pi_{i}\right)^{1-y_{i}}$$
+
+$$L(\beta ; X, y)=\prod_{i=1}^{n}\left\{\left(\frac{\exp \left(X_{i} \beta\right)}{1+\exp \left(X_{i} \beta\right)}\right)^{y_{i}}\left(\frac{1}{1+\exp \left(X_{i} \beta\right)}\right)^{1-y_{i}}\right\}$$
+Then maximize the log likelihood:
+$$l(\beta)=\sum_{i=1}^{n}\left\{y_{i}\left(X_{i} \beta\right)-\log \left(1+\exp \left(X_{i} \beta\right)\right)\right\}$$
+By taking derivative with respect to $\beta$, the gradient is:
+
+$$\nabla l(\beta)= \sum_{i=1}^{n}\left(y_{i}-\pi_{i}\right) \boldsymbol{x}_{i} =  X^{T}(Y-\boldsymbol{\pi})$$
+where $\pi_{i}=\frac{e^{\beta_{i}}}{1+e^{\beta_{i}}}$
+
+By taking the second derivative, the Hessian matrix can be represented by:
+
+$$
+\nabla^{2} l(\beta)=-X^{T} \operatorname{diag}\left(\pi_{i}\left(1-\pi_{i}\right)\right) X
+$$
+i = 1, ... n. Hessian matrix is negative definite.
+
+
+
+
+
+
+## 5-Fold Cross Validation
+The test data is taken from the same data, but is not involved in the training, so that the model can be evaluated relatively objectively to match the data outside the training set. The evaluation of the model in the test data is commonly done by cross-validation. It divides the original data into K groups (K-Fold), and makes each subset of data into a test set separately, and the rest of the K-1 subset data as the training set, so that K models will be obtained. These K models are evaluated separately in the test set, and the final error MSE (Mean Squared Error) is summed and averaged to obtain the cross-validation error.
+
+![Caption for the picture.](cv_principle.png){width=30%}
+
+In order to find the best lambda, we use 5-fold cross validation. The dataset is divided into five subdatasets by using the *crossv_kfold* function. We combined 4 of them as the training data set, and the rest $\frac{1}{5}$ of them as the test data set each time. The optimal coefficients is then found five times by running the logit-LASSO on the training data set, leaving a different subset out each time. The subset left out is then used to estimate the model performance. This is done for all lambdas in the pre-defined sequence in order to search for the lambda with the highest average predictive ability. 
+We use AUC as the criteria to choose the best tuning parameter and corresponding model obtained from train data since the response of this data set is binary. We then calculating AUC to evaluate the model performance in test dataset and choose the best lambda whose AUC is the biggest.
+
+After the 5-fold cross validation, we found that the best lambda is about $e^{-1.273} = 0.280$ in the optimal model when set.seed(2022). 
+
+
+
+
+
+
+## Appendix
+
 ```{r}
+# data preprocessing
 normalize <- function(col){
     mean = mean(col)
     std = sd(col)
@@ -60,7 +136,6 @@ x_train_b0 = cbind(rep(1,nrow(x_train)),x_train)
 x_test_b0 = cbind(rep(1,nrow(x_test)), x_test)
 ```
 
-## Logistic
 ```{r}
 logisticstuff <- function(x, y, betavec) {
 
@@ -82,9 +157,9 @@ logisticstuff <- function(x, y, betavec) {
 
 ```
 
-## Newton-Raphson
 
 ```{r}
+# newton raphson
 NewtonRaphson <- function(x, y, func, start, tol=1e-10, maxiter = 1000) {
   i = 0
   cur = start
@@ -129,12 +204,11 @@ colnames(ans) = c("iteration", "log likelihood")
 ggplot(ans, aes(x = iteration, y = `log likelihood`)) +
   geom_point(size = 0.5) +
   geom_line()
-
-
 ```
 
-## lassocd
+
 ```{r}
+# coordinate lasso
 soft_threshold <- function(beta, lambda) {
     sign(beta) * max(abs(beta) - lambda, 0)
 }
@@ -187,19 +261,14 @@ lassoCD <- function(
     }
     return(res)
 }
-
-
 ```
 
 
 
-## auc cv
-```{r}
+```{r, warning=FALSE}
+# auc cv
 model.glm <- glm.fit(x_train, y_train, family = binomial(link = "logit"))
-```
 
-
-```{r cv_using_lassoCD}
 lambda.cv.lassoCD = function(lambdas, x, y, k) {
   set.seed(2022)
   data = as.data.frame(cbind(x, y))
@@ -237,9 +306,9 @@ lambda.cv.lassoCD = function(lambdas, x, y, k) {
   return(cbind(log.lambda = log(lambdas), fold.auc))
 }
 
-lambda.seq.lassoCD = exp(seq(-1,-14, length=1000))
+lambda.seq = exp(seq(-1,-14, length=1000))
  
-cv.path.lassoCD = lambda.cv.lassoCD(lambda.seq.lassoCD, x_train_b0, y_train, 5)
+cv.path.lassoCD = lambda.cv.lassoCD(lambda.seq, x_train_b0, y_train, 5)
 cv.path.lassoCD = as.data.frame(cv.path.lassoCD)
 max.auc.lassoCD = max(cv.path.lassoCD$fold.auc)
 
@@ -255,17 +324,15 @@ cv.path.lassoCD %>%
 
 mean(exp((best.lambda.lassoCD)))
 
-best.lambda.lassoCD
+best.lambda.lassoCD <- mean(exp((best.lambda.lassoCD)))
 ```
+
 ```{r}
 best_beta.lassoCD <- lassoCD(x_train_b0, y_train,mean(exp(best.lambda.lassoCD)), init_beta = rep(4,dim(x_train_b0)[2]))
 ```
 
-## caret
-
 ```{r}
-library(caret)
-
+# caret package
 set.seed(9543)
 
 ctrl <- trainControl(method = "cv",
@@ -283,28 +350,15 @@ model.glmn <- train(x = x_train,
                    trControl = ctrl)
 
 model.glmn$bestTune
-
-
 ```
 
-
-
-## Path Result
 ```{r}
-
-```
-
-
-
-
-## coefficients
-
-```{r}
+# coeficients
 # newton rapson
 NR.coef = ans[nrow(ans), 3:ncol(ans)] %>% t()
 
 # logistic lasso
-NR.lasso.ans = coordinatelasso(lambda = exp(best.lambda), x_train_b0, y_train, s = rep(0, ncol(x_train_b0)), maxiter = 2000)
+NR.lasso.ans = lassoCD(x_train_b0, y_train, lambda = exp(best.lambda.lassoCD), init_beta = rep(0, ncol(x_train_b0)))
 NR.lasso.coef = NR.lasso.ans[nrow(NR.lasso.ans), 3:ncol(NR.lasso.ans)]
 
 # glm
@@ -321,8 +375,9 @@ logistics.coef %>%
   knitr::kable()
 ```
 
-## Compare with full model
+
 ```{r}
+# prediction
 lassoCD.predict <- function(betavec, X_new, y){
     Py <- 1/(1 + exp(-(X_new %*% betavec)))
     y.pred = rep(0, nrow(y))
@@ -330,14 +385,6 @@ lassoCD.predict <- function(betavec, X_new, y){
     return(y.pred)
 }
 
-
-```
-
-## test performance
-
-- test
-
-```{r}
 y.pred.log.lasso = lassoCD.predict(NR.lasso.coef, x_test_b0, y_test)
 y.pred.log = lassoCD.predict(NR.coef, x_test_b0, y_test)
 y.pred.glm = lassoCD.predict(as.matrix(glm.coef), x_test_b0, y_test)
@@ -370,68 +417,32 @@ ggroc(list(roc.log, roc.log.lasso, roc.glmn), legacy.axes = TRUE, size = 1, alph
 ## CV performance
 
 ```{r}
-lambda.cv.2 = function(lambdas, x, y, k, coefs) {
-  set.seed(2022)
-  data = as.data.frame(cbind(x, y))
-  folds = crossv_kfold(data, k = k)
-  
-  start = coefs
- 
-  fold.errors <- vector()
-  for (i in 1:k) {
-    trainrow= folds[i,1][[1]][[toString(i)]]$idx
-    testrow = folds[i,2][[1]][[toString(i)]]$idx
-    
-    train.X = x[trainrow,] 
-    test.X = x[testrow,] 
-    
-    train.y = y[trainrow,] 
-    test.y = y[testrow,] 
-    
-    # Perform the logistic-LASSO
-    fit = coordinatelasso(lambda = lambdas, train.X, train.y, s = start, maxiter = 2000)
-    betas = fit[nrow(fit),3:ncol(fit)]
-    u = test.X %*% betas
-    expu = exp(u)
-    prob = expu / (1 + expu)
-    # Calculate the test MSE for the fold
-    fold.errors[i] = mean(auc(test.y, prob))
-  }
-  return(fold.errors)
-}
-```
-
-
-```{r}
-cv.roc.log.lasso = lambda.cv.2(exp(best.lambda), x_train_b0, y_train, k = 5, coefs = NR.lasso.coef)
-cv.roc.log = lambda.cv.2(0, x_train_b0, y_train, k = 5, coefs = NR.coef)
-cv.roc.glmn = model.glmn$resample$ROC
+# cv.roc.log.lasso = lambda.cv.lassoCD(exp(best.lambda.lassoCD), x_train_b0, y_train, k = 5)
+# cv.roc.log = lambda.cv.lassoCD(0, x_train_b0, y_train, k = 5)
+# cv.roc.glmn = model.glmn$resample$ROC
 ```
 
 
 ```{r, fig.width=8, fig.height=4}
+#df = tibble(
+#  AUC = c(cv.roc.log, cv.roc.log.lasso, cv.roc.glmn),
+#  model = c(rep("Newton Raphson", 5), rep("Logistic-LASSO", 5), rep("caret-glmnet",5))
+#)
 
-df = tibble(
-  AUC = c(cv.roc.log, cv.roc.log.lasso, cv.roc.glmn),
-  model = c(rep("Newton Raphson", 5), rep("Logistic-LASSO", 5), rep("caret-glmnet",5))
-)
-
-df %>% 
-  ggplot(aes(fill = model)) +
-  geom_boxplot(aes(x = AUC, y = model)) +
-  scale_fill_manual(values=wes_palettes$GrandBudapest1[c(1, 2, 4)]) +
-  theme_bw() +
-  theme(text = element_text(size = 14))
+#df %>% 
+#  ggplot(aes(fill = model)) +
+#  geom_boxplot(aes(x = AUC, y = model)) +
+#  scale_fill_manual(values=wes_palettes$GrandBudapest1[c(1, 2, 4)]) +
+#  theme_bw() +
+#  theme(text = element_text(size = 14))
 ```
-
-
 
 ```{r}
 path <- function(X, y, lambdaseq){
     init_beta <- rep(0, dim(X)[2])
     betas <- NULL
     for (i in 1:length(lambdaseq)) {
-        cd.result = coordinatelasso(lambda = lambdaseq[i], X, y, s = init_beta, maxiter = 2000)
+        cd.result = lassoCD(X, y,lambda = lambdaseq[i], init_beta)
         last_beta <- cd.result[nrow(cd.result),3:dim(cd.result)[2]]
         init_beta <- last_beta
         betas <- rbind(betas,c(last_beta))
@@ -439,7 +450,7 @@ path <- function(X, y, lambdaseq){
     }
     return(data.frame(cbind(lambdaseq,betas)))
 }
-path.out <- path(x_train_b0, y_train, lambdaseq = exp(seq(-2,-13, length=100)))
+path.out <- path(x_train_b0, y_train, lambdaseq = exp(seq(-2,-10, length=100)))
 colnames(path.out) <- c("lambda","intercept",colnames(x_train_b0)[2:12])
 # plot a path of solutions
 path.plot <- path.out %>%
@@ -453,5 +464,4 @@ path.plot <- path.out %>%
         legend.text = element_text(size = 6))
 path.plot + theme_bw()
 ```
-
 
