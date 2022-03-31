@@ -2,7 +2,9 @@
 title: "Predictive Model Based on Logistic Regression for Cancer Diagnosis"
 author: "Yijing Tao; Renjie Wei; Jibei Zheng; Haolin Zhong; Anyu Zhu"
 date: "3/27/2022"
-output: pdf_document
+output: 
+  pdf_document:
+    latex_engine: xelatex
 ---
 
 ```{r setup, include=FALSE, warning = FALSE, message = FALSE}
@@ -99,6 +101,30 @@ We use AUC as the criteria to choose the best tuning parameter and corresponding
 After the 5-fold cross validation, we found that the best lambda is about $e^{-1.273} = 0.280$ in the optimal model when set.seed(2022). 
 
 
+## Results
+
+Table 1 showed model coefficient estimated by `glm` package, Newton-Raphson Method, `caret` package and Newton-Raphson Method with LASSO. Coefficients given by methods with LASSO were generated under the best lambda identified by 5-fold cross-validation. The Newton-Raphson method has given estimation identical to the glm package’s result, while Newton-Raphson Method with LASSO method generated different results compared to coefficients given by the caret package.
+
+|  | glm package | Newton-Raphson | Newton-Raphson-LASSO | caret-glmnet |
+| :--- | ---: | ---: | ---: | ---: |
+| (Intercept) | 0.0654858 | 0.0654858 | -0.1780134 | -0.1640622 |
+| radius_mean | 2.2932120 | 2.2932120 | 0.7817094 | 2.3027405 |
+| texture_mean | 2.3360195 | 2.3360195 | 0.3828815 | 1.6190796 |
+| smoothness_mean | 1.0236278 | 1.0236278 | 0.3554608 | 0.8468917 |
+| concavity_mean | 5.6067035 | 5.6067035 | 0.2635696 | 2.8832435 |
+| symmetry_mean | 0.4361524 | 0.4361524 | 0.1120167 | 0.1396835 |
+| fractal_dimension_mean | -0.6928074 | -0.6928074 | -0.0279244 | -0.0553622 |
+| radius_se | 1.7676645 | 1.7676645 | 0.1404862 | 0.9232047 |
+| texture_se | -0.8230016 | -0.8230016 | -0.0509926 | -0.3902772 |
+| smoothness_se | -0.0306181 | -0.0306181 | -0.0427187 | -0.0771703 |
+| concavity_se | -2.7175298 | -2.7175298 | 0.0343420 | -1.2343725 |
+| symmetry_se | -0.4841348 | -0.4841348 | -0.0419539 | -0.2628887 |
+
+
+\begin{center} \textbf{Table 1}. Model Coefficient Estimated by Different Methods \end{center}
+
+
+Figure 4 and Figure 5 showed comparison among performances of models in terms of 5-fold cross-validated AUC on the training dataset and AUC on the test dataset. 
 
 
 
@@ -374,9 +400,9 @@ logistics.coef %>%
 # prediction
 lassoCD.predict <- function(betavec, X_new, y){
     Py <- 1/(1 + exp(-(X_new %*% betavec)))
-    y.pred = rep(0, nrow(y))
-    y.pred[Py > 0.5] = 1
-    return(y.pred)
+    #y.pred = rep(0, nrow(y))
+    #y.pred[Py > 0.5] = 1
+    return(Py)
 }
 
 y.pred.log.lasso = lassoCD.predict(NR.lasso.coef, x_test_b0, y_test)
@@ -394,40 +420,69 @@ plot(roc.log, legacy.axes = TRUE, print.auc = TRUE)
 plot(roc.glmn, legacy.axes = TRUE, print.auc = TRUE)
 ```
 
-```{r, warning=FALSE}
+```{r, warning=FALSE, fig.height=4, fig.width=8}
 auc <- c(roc.log$auc[1], roc.log.lasso$auc[1], roc.glmn$auc[1])
 
-modelNames <- c("Newton-Raphson","Newton-Raphson LASSO","glmnet")
+modelNames <- c("Newton-Raphson","Newton-Raphson-LASSO","Caret-glmnet")
 
-ggroc(list(roc.log, roc.log.lasso, roc.glmn), legacy.axes = TRUE, size = 1, alpha = 0.5) + 
+ggroc(list(roc.log, roc.log.lasso, roc.glmn), legacy.axes = TRUE, size = 1, alpha = 0.3) + 
   scale_color_discrete(labels = paste0(modelNames, " (", round(auc,3),")"),
                        name = "Models (AUC)") +
   geom_abline(intercept = 0, slope = 1, color = "grey") +
   theme_bw() +
-  theme(text = element_text(size = 14))
+  theme(text = element_text(size = 16))
 ```
 
 ## CV performance
 
 ```{r}
-# cv.roc.log.lasso = lambda.cv.lassoCD(exp(best.lambda.lassoCD), x_train_b0, y_train, k = 5)
-# cv.roc.log = lambda.cv.lassoCD(0, x_train_b0, y_train, k = 5)
-# cv.roc.glmn = model.glmn$resample$ROC
+extract.cv.performance = function(x, y, k, betas) {
+  set.seed(2022)
+  data = as.data.frame(cbind(x, y))
+  folds = crossv_kfold(data, k = k)
+  
+  fold.errors <- vector()
+  for (i in 1:k) {
+    trainrow= folds[i,1][[1]][[toString(i)]]$idx
+    testrow = folds[i,2][[1]][[toString(i)]]$idx
+    
+    train.X = x[trainrow,] 
+    test.X = x[testrow,] 
+    
+    train.y = y[trainrow,] 
+    test.y = y[testrow,] 
+    
+    u = test.X %*% betas
+    expu = exp(u)
+    prob = expu / (1 + expu)
+    # Calculate the test MSE for the fold
+    fold.errors[i] = mean(auc(test.y, prob))
+  }
+  return(fold.errors)
+}
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+cv.roc.log.lasso = extract.cv.performance(x_train_b0, y_train, k = 5, as.vector(t(NR.lasso.coef)))
+cv.roc.log = extract.cv.performance(x_train_b0, y_train, k = 5, as.vector(t(NR.coef)))
+cv.roc.glmn = extract.cv.performance(x_train_b0, y_train, k = 5, as.vector(t(glmn.coef)))
 ```
 
 
 ```{r, fig.width=8, fig.height=4}
-#df = tibble(
-#  AUC = c(cv.roc.log, cv.roc.log.lasso, cv.roc.glmn),
-#  model = c(rep("Newton Raphson", 5), rep("Logistic-LASSO", 5), rep("caret-glmnet",5))
-#)
+df = tibble(
+  AUC = c(cv.roc.log, cv.roc.log.lasso, cv.roc.glmn),
+  model = c(rep("Newton Raphson", 5), rep("Logistic-LASSO", 5), rep("caret-glmnet",5))
+)
 
-#df %>% 
-#  ggplot(aes(fill = model)) +
-#  geom_boxplot(aes(x = AUC, y = model)) +
-#  scale_fill_manual(values=wes_palettes$GrandBudapest1[c(1, 2, 4)]) +
-#  theme_bw() +
-#  theme(text = element_text(size = 14))
+library(wesanderson)
+df %>% 
+  ggplot(aes(fill = model)) +
+  geom_boxplot(aes(x = AUC, y = model)) +
+  scale_fill_manual(values=wes_palettes$GrandBudapest1[c(1, 2, 4)]) +
+  theme_bw() +
+  theme(text = element_text(size = 14))
 ```
 
 ```{r}
