@@ -157,14 +157,15 @@ The implementation of algorithm can be shown in the **Algorithm 1**.
 
 
 ## 5-Fold Cross Validation
-The test data is taken from the same data, but is not involved in the training, so that the model can be evaluated relatively objectively to match the data outside the training set. The evaluation of the model in the test data is commonly done by cross-validation. It divides the original data into K groups (K-Fold), and makes each subset of data into a test set separately, and the rest of the K-1 subset data as the training set, so that K models will be obtained. These K models are evaluated separately in the test set, and the final error MSE (Mean Squared Error) is summed and averaged to obtain the cross-validation error.
+In the k-fold cross validation,the original data will be divided K groups (K-Fold), and makes each subset of data into a test set separately, and the rest of the K-1 subset data as the training set, so that K models will be obtained. These K models are evaluated separately in the test set.
 
-![Caption for the picture.](cv_principle.png){width=30%}
+![Principle of k-fold CV](cv_principle.png){width=30%}
 
 In order to find the best lambda, we use 5-fold cross validation. The dataset is divided into five subdatasets by using the *crossv_kfold* function. We combined 4 of them as the training data set, and the rest $\frac{1}{5}$ of them as the test data set each time. The optimal coefficients is then found five times by running the logit-LASSO on the training data set, leaving a different subset out each time. The subset left out is then used to estimate the model performance. This is done for all lambdas in the pre-defined sequence in order to search for the lambda with the highest average predictive ability. 
-We use AUC as the criteria to choose the best tuning parameter and corresponding model obtained from train data since the response of this data set is binary. We then calculating AUC to evaluate the model performance in test dataset and choose the best lambda whose AUC is the biggest.
 
-![Caption for the picture.](cv_result.png){width=30%}
+We use AUC as the criteria to choose the best tuning parameter and corresponding model obtained from train data since the response of this data set is binary. We then calculating AUC to evaluate the model performance in test dataset and choose the best lambda whose average AUC is the biggest.
+
+![log.lambda with the Largest AUC](cv_result.png){width=60%}
 
 After the 5-fold cross validation, we found that the best lambda is about $e^{-6.236} = 0.00196$ in the optimal model when set.seed(2022) within $e^{-1}$ to $e^{-10}$. 
 
