@@ -107,26 +107,33 @@ Table 1 showed model coefficient estimated by `glm` package, Newton-Raphson Meth
 
 |  | glm package | Newton-Raphson | Newton-Raphson-LASSO | caret-glmnet |
 | :--- | ---: | ---: | ---: | ---: |
-| (Intercept) | 0.0654858 | 0.0654858 | -0.1780134 | -0.1640622 |
-| radius_mean | 2.2932120 | 2.2932120 | 0.7817094 | 2.3027405 |
-| texture_mean | 2.3360195 | 2.3360195 | 0.3828815 | 1.6190796 |
-| smoothness_mean | 1.0236278 | 1.0236278 | 0.3554608 | 0.8468917 |
-| concavity_mean | 5.6067035 | 5.6067035 | 0.2635696 | 2.8832435 |
-| symmetry_mean | 0.4361524 | 0.4361524 | 0.1120167 | 0.1396835 |
-| fractal_dimension_mean | -0.6928074 | -0.6928074 | -0.0279244 | -0.0553622 |
-| radius_se | 1.7676645 | 1.7676645 | 0.1404862 | 0.9232047 |
-| texture_se | -0.8230016 | -0.8230016 | -0.0509926 | -0.3902772 |
-| smoothness_se | -0.0306181 | -0.0306181 | -0.0427187 | -0.0771703 |
-| concavity_se | -2.7175298 | -2.7175298 | 0.0343420 | -1.2343725 |
-| symmetry_se | -0.4841348 | -0.4841348 | -0.0419539 | -0.2628887 |
+| texture_mean | 2.3360195 | 2.3360195 | 2.1686704 | 1.6190796 |
+| smoothness_mean | 1.0236278 | 1.0236278 | 1.0493920 | 0.8468917 |
+| concavity_mean | 5.6067035 | 5.6067035 | 3.6810934 | 2.8832435 |
+| symmetry_mean | 0.4361524 | 0.4361524 | 0.2940973 | 0.1396835 |
+| fractal_dimension_mean | -0.6928074 | -0.6928074 | -0.0473727 | -0.0553622 |
+| radius_se | 1.7676645 | 1.7676645 | 1.2966335 | 0.9232047 |
+| texture_se | -0.8230016 | -0.8230016 | -0.6025411 | -0.3902772 |
+| smoothness_se | -0.0306181 | -0.0306181 | -0.3360082 | -0.0771703 |
+| concavity_se | -2.7175298 | -2.7175298 | -1.3849591 | -1.2343725 |
+| symmetry_se | -0.4841348 | -0.4841348 | -0.4795127 | -0.2628887 |
 
 
 \begin{center} \textbf{Table 1}. Model Coefficient Estimated by Different Methods \end{center}
 
 
-Figure 4 and Figure 5 showed comparison among performances of models in terms of 5-fold cross-validated AUC on the training dataset and AUC on the test dataset. 
+Figure 4 and Figure 5 showed comparison among performances of models in terms of 5-fold cross-validated AUC on the training dataset and AUC on the test dataset. For calculating cross-validated AUC, previous folds used in the train process of the logistic LASSO model were used. Compared to the full logistic model, the optimal logistic LASSO model displayed better performance in the cross validation on the train dataset, and showed the same AUC on the test dataset. Therefore, we can conclude that inclusion of LASSO penalty term in the model training process has slightly improved the model. Besides, the model trained by `caret`, although showed the best performance in the cross-validation, has a test AUC slightly smaller than other 2 models.
+
+![](train_auc.png){width=100%}
+
+\begin{center} \textbf{Figure 4}. Model Coefficient Estimated by Different Methods \end{center}
 
 
+$\quad$
+
+![](test_auc.png){width=100%}
+
+\begin{center} \textbf{Figure 5}. Model AUCs on the Test Dataset \end{center}
 
 
 ## Appendix
@@ -327,29 +334,39 @@ lambda.cv.lassoCD = function(lambdas, x, y, k) {
 }
 
 lambda.seq = exp(seq(-1,-10, length=500))
- 
+
 cv.path.lassoCD = lambda.cv.lassoCD(lambda.seq, x_train_b0, y_train, 5)
 cv.path.lassoCD = as.data.frame(cv.path.lassoCD)
+
 max.auc.lassoCD = max(cv.path.lassoCD$fold.auc)
 
 max.auc.lassoCD
 
 best.lambda.lassoCD = mean(cv.path.lassoCD[which(cv.path.lassoCD$fold.auc == max.auc.lassoCD),]$log.lambda)
 
+best.lambda.lassoCD
+
+best.lambdas = cv.path.lassoCD[which(cv.path.lassoCD$fold.auc == max.auc.lassoCD),]$log.lambda
+
+best.lambda = best.lambdas[length(best.lambdas)]
+
+
+ind = which(cv.path.lassoCD$log.lambda == best.lambda)
+
 cv.path.lassoCD %>%
   ggplot(data = ., aes(x = log.lambda, y = fold.auc)) +
-  geom_vline(xintercept = best.lambda.lassoCD) +
+  geom_vline(xintercept = best.lambda) +
   geom_line(color = "red") 
 
 
 # mean(exp((best.lambda.lassoCD)))
 
 best.lambda.lassoCD <- exp(best.lambda.lassoCD)
+best.lambda.lassoCD
 ```
 
-```{r}
-best_beta.lassoCD <- lassoCD(x_train_b0, y_train,exp(best.lambda.lassoCD), init_beta = rep(1,dim(x_train_b0)[2]))
-```
+
+
 
 ```{r}
 # caret package
@@ -372,14 +389,48 @@ model.glmn <- train(x = x_train,
 model.glmn$bestTune
 ```
 
+
+
+
+
+```{r}
+extract.coef = function(lambdas, x, y, k) {
+  set.seed(2022)
+  data = as.data.frame(cbind(x, y))
+  folds = crossv_kfold(data, k = k)
+  
+  start = rep(1, ncol(x))
+
+  for (j in 1:length(lambdas)) {
+    for (i in 1:k) {
+      trainrow= folds[i,1][[1]][[toString(i)]]$idx
+      testrow = folds[i,2][[1]][[toString(i)]]$idx
+      
+      train.X = x[trainrow,] 
+      test.X = x[testrow,] 
+      
+      train.y = y[trainrow,] 
+      test.y = y[testrow,] 
+      
+      # Perform the logistic-LASSO
+      fit = lassoCD(train.X, train.y, lambda = lambdas[j], init_beta = start)
+      betas = fit[nrow(fit),3:ncol(fit)]
+    }
+    start = betas
+  }
+  return(betas)
+}
+
+NR.lasso.coef = extract.coef(lambda.seq[1:ind], x_train_b0, y_train, 5)
+```
+
+
+
+
 ```{r}
 # coeficients
 # newton rapson
 NR.coef = ans[nrow(ans), 3:ncol(ans)] %>% t()
-
-# logistic lasso
-NR.lasso.ans = lassoCD(x_train_b0, y_train, lambda = exp(best.lambda.lassoCD), init_beta = rep(0, ncol(x_train_b0)))
-NR.lasso.coef = NR.lasso.ans[nrow(NR.lasso.ans), 3:ncol(NR.lasso.ans)]
 
 # glm
 fit.glm = glm(y_train ~ x_train, family = binomial(link = "logit"))
@@ -408,7 +459,7 @@ lassoCD.predict <- function(betavec, X_new, y){
 y.pred.log.lasso = lassoCD.predict(NR.lasso.coef, x_test_b0, y_test)
 y.pred.log = lassoCD.predict(NR.coef, x_test_b0, y_test)
 y.pred.glm = lassoCD.predict(as.matrix(glm.coef), x_test_b0, y_test)
-y.pred.glmn = lassoCD.predict(as.matrix(NR.lasso.coef), x_test_b0, y_test)
+y.pred.glmn = lassoCD.predict(as.matrix(glmn.coef), x_test_b0, y_test)
 ```
 
 ```{r, warning=FALSE}
