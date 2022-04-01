@@ -74,7 +74,7 @@ corrplot(cor(x), method = "color", tl.col = "blue", tl.srt = 60, tl.cex = 0.7,
 
 We standardized the data by the `scale()` function in R, take the first 80% of observations as training dataset, and the rest 20% of observations as testing dataset for model comparison.
 
-## Method
+## Methods
 
 ## Logistic Model
 
@@ -99,6 +99,17 @@ $$
 \nabla^{2} l(\beta)=-X^{T} \operatorname{diag}\left(\pi_{i}\left(1-\pi_{i}\right)\right) X
 $$
 i = 1, ... n. Hessian matrix is negative definite.
+
+
+## Newton-Raphson Algorithm
+
+Our target is to find the $\boldsymbol{\beta}$ that maximizes the log-likelihood $l (\boldsymbol{\beta})$ of our logistic regression, that is, the solution to the equation $\nabla l (\boldsymbol{\beta})=0$. At the same time, the Hessian matrix $\nabla^{2} l(\boldsymbol{\beta)}$ needs to be negative definite to ensure $\boldsymbol{\beta}$ to be a local maximum rather than a local minimum or a saddle point. As for logistic regression, $$H=-X^{T} \operatorname{diag}\left(\pi_{i}\left(1-\pi_{i}\right)\right) X=-\sum_{i=1}^{p}a_{i}^{2}x_{ii}^{2}\pi _{i}(1-\pi _{i}),$$ for any $\boldsymbol{a}$,  $$\mathbf{a}^{T}H\textbf{a} = -\sum_{i=1}^{p}a_{i}^{2}x_{ii^{}}^{2}\pi _{i}(1-\pi _{i}) <0,$$ thus the Hessian matrix is negative definite and the log-likelihood is concave at any parameter value. In this case, $\nabla l (\boldsymbol{\beta})=0$ guarantees the global maximum.
+
+The basic idea is that given a current point $\boldsymbol\theta_{i-1}$, we choose an ascent direction $\boldsymbol d$ and an appropriate step length $\lambda$ to travel and locate the next $\boldsymbol\theta_{i}$. Specially, the Newton-Raphson algorithm makes use of the information from the second partial derivatives to find the direction with the highest convergence efficiency. The $i$th step is given by $$\boldsymbol\theta_{i}=\boldsymbol\theta_{i-1}-\lambda[\nabla^{2}f(\boldsymbol\theta_{i-1})]^{-1}\nabla f(\boldsymbol\theta_{i-1})$$
+
+Normally, we need to check if the Hessian matrix is negative definite. If not, we should replace it with a negative definite matrix such as $\nabla^{2}f(\boldsymbol\theta_{i-1})-\gamma I$ where $\gamma$ is the largest eigenvalue, or with negative Fisher information matrix, or simply with $-I_{p\times p}$ (as in the Gradient Descent algorithm). Again in this study, the Hessian matrix is always negative definite so this step is not necessary. Next, we add step halving modification in each iteration. After each time we update the parameter point, we check if the log-likelihood has increased. If not, we backtrack and cut the current $\lambda$ in half and recalculate the next parameter point, until the log-likelihood is increasing.
+
+The stopping criteria is when the absolute value of difference in consecutive log-likelihood values is less than the tolerance of $10^{-10}$ or iteration times reaches 1000. Since a unique global maximum is guaranteed, variety of initial $\boldsymbol\theta_{0}$ should result in the same final estimation. After testing different inputs, we get the same convergence indeed. The estimations using the training dataset with the selected predictors are shown in the results section. 
 
 ## Logitstic LASSO Coordinate Descent Algorithm
 
@@ -222,7 +233,7 @@ $\quad$
 
 ## Appendix
 
-```{r}
+```{r, results='hide'}
 # data preprocessing
 normalize <- function(col){
     mean = mean(col)
@@ -253,7 +264,8 @@ x_train_b0 = cbind(rep(1,nrow(x_train)),x_train)
 x_test_b0 = cbind(rep(1,nrow(x_test)), x_test)
 ```
 
-```{r}
+```{r, results='hide'}
+# newton raphson
 logisticstuff <- function(x, y, betavec) {
 
   x = cbind(1, x)
@@ -272,10 +284,6 @@ logisticstuff <- function(x, y, betavec) {
   return(list(loglik = loglik, grad = grad, Hess = Hess))
 }
 
-```
-
-```{r}
-# newton raphson
 NewtonRaphson <- function(x, y, func, start, tol=1e-10, maxiter = 1000) {
   i = 0
   cur = start
@@ -323,7 +331,7 @@ ggplot(ans, aes(x = iteration, y = `log likelihood`)) +
 ```
 
 
-```{r}
+```{r, results='hide'}
 # coordinate lasso
 soft_threshold <- function(beta, lambda) {
     sign(beta) * max(abs(beta) - lambda, 0)
@@ -378,7 +386,7 @@ lassoCD <- function(
 }
 ```
 
-```{r, warning=FALSE}
+```{r, warning=FALSE, results='hide'}
 # auc cv
 model.glm <- glm.fit(x_train, y_train, family = binomial(link = "logit"))
 
@@ -452,7 +460,7 @@ best.lambda.lassoCD
 
 
 
-```{r}
+```{r, results='hide'}
 # caret package
 set.seed(9543)
 
@@ -477,7 +485,7 @@ model.glmn$bestTune
 
 
 
-```{r}
+```{r, results='hide'}
 extract.coef = function(lambdas, x, y, k) {
   set.seed(2022)
   data = as.data.frame(cbind(x, y))
@@ -511,7 +519,7 @@ NR.lasso.coef = extract.coef(lambda.seq[1:ind], x_train_b0, y_train, 5)
 
 
 
-```{r}
+```{r, results='hide'}
 # coeficients
 # newton rapson
 NR.coef = ans[nrow(ans), 3:ncol(ans)] %>% t()
@@ -531,7 +539,7 @@ logistics.coef %>%
 ```
 
 
-```{r}
+```{r, results='hide'}
 # prediction
 lassoCD.predict <- function(betavec, X_new, y){
     Py <- 1/(1 + exp(-(X_new %*% betavec)))
@@ -546,7 +554,7 @@ y.pred.glm = lassoCD.predict(as.matrix(glm.coef), x_test_b0, y_test)
 y.pred.glmn = lassoCD.predict(as.matrix(glmn.coef), x_test_b0, y_test)
 ```
 
-```{r, warning=FALSE}
+```{r, warning=FALSE, results='hide'}
 roc.log.lasso <- roc(y_test, y.pred.log.lasso)
 roc.log = roc(y_test, y.pred.log)
 roc.glmn = roc(y_test, y.pred.glmn)
@@ -555,7 +563,7 @@ plot(roc.log, legacy.axes = TRUE, print.auc = TRUE)
 plot(roc.glmn, legacy.axes = TRUE, print.auc = TRUE)
 ```
 
-```{r, warning=FALSE, fig.height=4, fig.width=8}
+```{r, warning=FALSE, fig.height=4, fig.width=8, results='hide'}
 auc <- c(roc.log$auc[1], roc.log.lasso$auc[1], roc.glmn$auc[1])
 
 modelNames <- c("Newton-Raphson","Newton-Raphson-LASSO","Caret-glmnet")
