@@ -55,23 +55,26 @@ The dataset 'breast-cancer'we used contains 569 rows and 32 columns. The variabl
 
 Figure q displays the correlation between variables. We can see the correlation coefficient is large between several pairs of variables, which will potentially cause the problem of not converging in Newton-Raphson algorithm and Logistic Lasso model.  
 
-```{r, echo=FALSE, message=FALSE, fig.height=4, fig.width=6}
+```{r, echo=FALSE, message=FALSE, fig.height=3.5, fig.width=5}
 cancer_numeric = cancer[, 3:32]
 corrplot(cor(cancer_numeric), method = 'color', tl.col = "blue", tl.cex = 0.5, 
-         tl.srt = 45, title = "Figure 1: Correlation plot of all variables", mar=c(0,0,1,0))
+         tl.srt = 45)
 ```
+
+\begin{center} \textbf{Figure 1}. Correlation plot of all variables \end{center}
 
 To reduce the multicolinearity effect, we conducted feature selection by removing variables with correlation coefficient > 0.7 and keep the rest 11 variables. After the adjustment, the correlation plot between variables change to:
 
-```{r, echo=FALSE, message=FALSE, fig.height=4, fig.width=6}
+```{r, echo=FALSE, message=FALSE, fig.height=3.5, fig.width=5}
 x = read.csv("breast-cancer.csv") %>% 
   mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
   select(-id) %>% 
   select(radius_mean, texture_mean, smoothness_mean, concavity_mean, symmetry_mean, fractal_dimension_mean, radius_se, texture_se, smoothness_se, concavity_se, symmetry_se)
 
-corrplot(cor(x), method = "color", tl.col = "blue", tl.srt = 60, tl.cex = 0.7,
-         title = "Figure 2: Correlation plot after feature selection", mar=c(0,0,1,0))
+corrplot(cor(x), method = "color", tl.col = "blue", tl.srt = 60, tl.cex = 0.7)
 ```
+
+\begin{center} \textbf{Figure 2}. Correlation plot of after feature selection \end{center}
 
 We standardized the data by the `scale()` function in R, take the first 80% of observations as training dataset, and the rest 20% of observations as testing dataset for model comparison.
 
@@ -182,7 +185,7 @@ We use AUC as the criteria to choose the best tuning parameter and corresponding
 After the 5-fold cross validation, we found that the best lambda is about $e^{-6.236} = 0.00196$ in the optimal model when set.seed(2022) within $e^{-1}$ to $e^{-10}$. 
 
 
-## Results
+## Results and Discussion
 
 Table 1 showed model coefficient estimated by `glm` package, Newton-Raphson Method, `caret` package and Newton-Raphson Method with LASSO. Coefficients given by methods with LASSO were generated under the best lambda identified by 5-fold cross-validation. The Newton-Raphson method has given estimation identical to the glm package’s result, while Newton-Raphson Method with LASSO method generated different results compared to coefficients given by the caret package.
 
@@ -218,6 +221,7 @@ $\quad$
 
 \begin{center} \textbf{Figure 5}. Model AUCs on the Test Dataset \end{center}
 
+This study has some limitations. At the data preprocessing stage, we removed variables with correlation coefficient larger than 0.7, which only left us 11 variables for modeling. For further study, we could try other criteria for feature selection and keep more information from the original dataset. In addition, we could try some other evaluation metrics in cross validation, like error rate.
 
 ## Citations
 
@@ -460,9 +464,6 @@ best.lambda.lassoCD <- exp(best.lambda.lassoCD)
 best.lambda.lassoCD
 ```
 
-
-
-
 ```{r, results='hide'}
 # caret package
 set.seed(9543)
@@ -483,10 +484,6 @@ model.glmn <- train(x = x_train,
 
 model.glmn$bestTune
 ```
-
-
-
-
 
 ```{r, results='hide'}
 extract.coef = function(lambdas, x, y, k) {
@@ -518,9 +515,6 @@ extract.coef = function(lambdas, x, y, k) {
 
 NR.lasso.coef = extract.coef(lambda.seq[1:ind], x_train_b0, y_train, 5)
 ```
-
-
-
 
 ```{r, results='hide'}
 # coeficients
@@ -578,8 +572,6 @@ ggroc(list(roc.log, roc.log.lasso, roc.glmn), legacy.axes = TRUE, size = 1, alph
   theme_bw() +
   theme(text = element_text(size = 16))
 ```
-
-## CV performance
 
 ```{r}
 extract.cv.performance = function(x, y, k, betas) {
