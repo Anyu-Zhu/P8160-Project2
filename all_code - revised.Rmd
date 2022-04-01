@@ -2,10 +2,25 @@
 title: "Predictive Model Based on Logistic Regression for Cancer Diagnosis"
 author: "Yijing Tao; Renjie Wei; Jibei Zheng; Haolin Zhong; Anyu Zhu"
 date: "3/27/2022"
-output: 
+output:
   pdf_document:
-    latex_engine: xelatex
+    toc: yes
+    toc_depth: 2
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+header-includes:
+- \usepackage{fancyhdr}
+- \usepackage{lipsum}
+- \pagestyle{fancy}
+- \fancyhead[R]{\thepage}
+- \fancypagestyle{plain}{\pagestyle{fancy}}
+- \usepackage{algorithm} 
+- \usepackage{algpseudocode} 
 ---
+
+\newpage
 
 ```{r setup, include=FALSE, warning = FALSE, message = FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE)
@@ -85,9 +100,60 @@ $$
 $$
 i = 1, ... n. Hessian matrix is negative definite.
 
+## Logitstic LASSO Coordinate Descent Algorithm
 
+Regularization is the common variable selection approaches for high-dimensional covariates. One of the best known Regularization is called LASSO, which is to add $L1$-penalty to the objective function. In this project, we consider a logistic regression, with penalty term, we are aiming to maximize the penalized log likelihood:
+$$\max_{\beta \in \mathbb{R}^{p+1}} \frac{1}{n}\sum_{i=1}^n  \{y_i(X_{i}\beta)-\log(1+\exp(X_{i}\beta))\}-\lambda \sum_{j=0}^p |\beta_j|$$
+for some $\lambda \geq 0$. Here the $x_{i,j}$, which are our data, are standardized so that $\sum_{i}x_{i,j}/n = 0$ and $\sum_{i}x_{i,j}^{2}/n = 1$.
 
+If the current estimate of the parameter is $\tilde{\beta}$, we can form a quadratic approximation to the negative log likelihood by Taylor expansion around the current estimate, which is:
+$$
+f(\beta) = -\frac{1}{2n}\sum_{i=1}^{n}w_i(z_{i} - \sum_{j=0}^{p}x_{i,j}\beta_{j})^{2} + C(\tilde{\beta})
+$$
+where 
+\[
+\begin{aligned}
+& z_i = \tilde{\beta}_0+ x_i^T\tilde{\beta} + \frac{y_i-\tilde{p}(x_i)}{\tilde{p}(x_i)(1-\tilde{p}(x_i))}, \text{working response}\\
+& w_i = \tilde{p}(x_i)(1-\tilde{p}(x_i)), \text{working weights}
+\end{aligned}
+\]
+and $\tilde{p}(x_i)$ is evaluated at the current parameters, the last term is constant. 
 
+The coordinate descent algorithm for logistic lasso regressions finds the iteratively re-weighted least squares (IRLS) solution for the penalized Taylor approximation of the log-likelihood of the logistic regression model, which is
+
+$$\min_{\beta \in \mathbb{R}^{p+1}} \{ -f(\beta) + \lambda\sum_{j=0}^p |\beta_j| \}$$
+The coordinate descent procedure for the logistic regression follows the same steps as the least squares procedure, with the exception that the coordinate update formula is modified to account for the weights, that is, for any $\lambda \in \mathbb{R}_+$:
+
+$$
+\tilde{\beta}_j^{\text{lasso}} \leftarrow \frac{S(\sum_{i=1}^{n}w_ix_{ij}(z_i - \sum_{j \neq k} \beta_j x_{ij}),\lambda)}{\sum_{i=1}^{n}w_ix_{ij}^2}
+$$
+where $S$ is the soft-threshold (or _shrinkage_) function, defined as $S(\hat{\beta}, \lambda) = sign(\hat{\beta})(|\hat{\beta}| - \lambda)_{+}$.
+
+The above amounts to a sequence of nested loops:
+
+- outer loop: start with $\lambda$ that all the coefficients are forced to be zero (in application, $\lambda_{\text{max}} = \frac{\max|X^Ty|}{n}$), then decrements $\lambda$;
+- middle loop: update the quadratic $f(\beta)$ using the current estimates of parameters;
+- inner loop: run the coordinate descent algorithm on the penalized weighted least square problem.
+
+In our problem, care is taken to avoid coefficients diverging in order to achieve fitted probabilities of 0 or 1 which is the warning message by the R package. When a working weight get closely enough to 0 ($10^{-5}$ in application) , we set it to a threshold value ($10^{-5}$).
+
+The implementation of algorithm can be shown in the **Algorithm 1**.
+
+\begin{algorithm}
+	\caption{Coordinate Descent Logistic Lasso} 
+	\begin{algorithmic}[1]
+		\For {$\lambda\in \lambda_{max}\ge \lambda_1 \ge \ldots \lambda_{min}\ge 0$}
+			\For {$ iteration =1,2,\ldots,k$}
+				\State Run the coordinate descent algorithm until it converges
+				\For{$j = 1,2,\ldots, p+1$}
+				    \State Update $\tilde{\beta}_j^{\text{lasso}} \leftarrow \frac{S(\sum_{i=1}^{n}w_ix_{ij}(z_i - \sum_{j \neq k} \beta_j x_{ij}),\lambda)}{\sum_{i=1}^{n}w_ix_{ij}^2}$ 
+				\EndFor
+				\State Check the difference between previous loss and current loss. If the difference is smaller than predefined tolerance($10^{-10}$), then stop updating.
+			\EndFor
+            \State Use the final coefficient estimates for each value of $\lambda_t$ as the initial value for the subsequent $\lambda_{t+1}$
+		\EndFor
+	\end{algorithmic} 
+\end{algorithm}
 
 
 ## 5-Fold Cross Validation
@@ -137,6 +203,21 @@ $\quad$
 
 \begin{center} \textbf{Figure 5}. Model AUCs on the Test Dataset \end{center}
 
+
+## Citations
+
+\begin{enumerate}
+\item Friedman, J., Hastie, T., Höfling, H. and Tibshirani, R. (2007). “Pathwise Coordinate Optimization.” The Annals of Applied Statistics. Vol. 1, No. 2, pp. 302-332. 
+
+\item Friedman, J., Hastie, T., and Tibshirani, R. 2010. “Regularization Paths for Generalized Linear Models via Coordinate Descent.” Journal of Statistical Software, Volume 33 Issue 1.
+
+\item Fu, W. 1998. “Penalized regressions: the bridge vs. the lasso.” Journal of Computational and Graphical Statistics, Volume 7, Issue 3, pp. 397-416. 
+
+\item Hastie, T., Tibshirani, R., and Friedman, J. 2009. The Elements of Statistical Learning: Data Mining, Inference, and Prediction. 2nd ed. New York City, NY: Springer Series in Statistics. 
+
+\item Tibshirani, R. 1996. “Regression Shrinkage and Selection via the Lasso.” Journal of the Royal Statistical Society. Series B (Methodological), Volume 58 Issue 1, pp. 267-288. 
+
+\end{enumerate}
 
 ## Appendix
 
