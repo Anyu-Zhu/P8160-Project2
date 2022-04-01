@@ -6,6 +6,7 @@ output:
   pdf_document:
     toc: yes
     toc_depth: 2
+    latex_engine: xelatex
   html_document:
     df_print: paged
     toc: yes
@@ -187,6 +188,8 @@ Table 1 showed model coefficient estimated by `glm` package, Newton-Raphson Meth
 
 |  | glm package | Newton-Raphson | Newton-Raphson-LASSO | caret-glmnet |
 | :--- | ---: | ---: | ---: | ---: |
+| (Intercept) | 0.0654858 | 0.0654858 | -0.0426412 | -0.1640622 |
+| radius_mean | 2.2932120 | 2.2932120 | 2.8124161 | 2.3027405
 | texture_mean | 2.3360195 | 2.3360195 | 2.1686704 | 1.6190796 |
 | smoothness_mean | 1.0236278 | 1.0236278 | 1.0493920 | 0.8468917 |
 | concavity_mean | 5.6067035 | 5.6067035 | 3.6810934 | 2.8832435 |
