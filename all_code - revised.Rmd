@@ -45,27 +45,28 @@ n_m = sum(cancer$diagnosis == "M")
 n_b = n_obs - n_m
 ```
 
-## Introduction
+## 1 Introduction
 
-### Background and Objective
-Breast cancer mainly occurs in middle-aged and older women. The median age at the time of breast cancer diagnosis is 62. This means half of the women who developed breast cancer are 62 years of age or younger when they are diagnosed. The goal of the project is to build a predictive model based on logistic regression to facilitate cancer diagnosis. We first build a logistic model to classify the images, then developed a Newton-Raphson algorithm to estimate the parameters of the logistic model. Then, we built a logistic-LASSO model to select features. Finally, we applied 5-fold cross-validation to select the best $\lambda$ for the logistic-LASSO model. 
+### 1.1 Background and Objective
+Breast cancer mainly occurs in middle-aged and older women. The median age at the time of breast cancer diagnosis is 62. This means half of the women who developed breast cancer are 62 years of age or younger when they are diagnosed. Breast cancer survival rates have increased, and the number of deaths associated with this disease is steadily declining, largely due to factors such as earlier detection.
 
-### Data Preprocessing
+The goal of the project is to build a predictive model based on logistic regression to facilitate cancer diagnosis. We first build a logistic model to classify the images, then developed a Newton-Raphson algorithm to estimate the parameters of the logistic model. Then, we built a logistic-LASSO model to select features. Finally, we applied 5-fold cross-validation to select the best $\lambda$ for the logistic-LASSO model. 
+
+### 1.2 Data Preprocessing
 The dataset 'breast-cancer'we used contains 569 rows and 32 columns. The variable `diagnosis` identifies if the image is coming from cancer tissue or benign. We labeled `malignant` as 1 and `benign` as 0. In total there are 212 malignant cases and 357 benign cases. There are 30 variables corresponding to mean, standard deviation and the largest values (points on the tails) of the distributions of 10 features: radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, and fractal dimension.
 
-Figure q displays the correlation between variables. We can see the correlation coefficient is large between several pairs of variables, which will potentially cause the problem of not converging in Newton-Raphson algorithm and Logistic Lasso model.  
+Figure 1 displays the correlation between variables. We can see the correlation coefficient is large between several pairs of variables, which will potentially cause the problem of not converging in Newton-Raphson algorithm and Logistic Lasso model.  
 
-```{r, echo=FALSE, message=FALSE, fig.height=3.5, fig.width=5}
+```{r, echo=FALSE, message=FALSE, fig.height=3.5, fig.width=5, include=FALSE}
 cancer_numeric = cancer[, 3:32]
 corrplot(cor(cancer_numeric), method = 'color', tl.col = "blue", tl.cex = 0.5, 
          tl.srt = 45)
 ```
-
-\begin{center} \textbf{Figure 1}. Correlation plot of all variables \end{center}
+![Correlation plot of all variables](corr.png){width=80%}
 
 To reduce the multicolinearity effect, we conducted feature selection by removing variables with correlation coefficient > 0.7 and keep the rest 11 variables. After the adjustment, the correlation plot between variables change to:
 
-```{r, echo=FALSE, message=FALSE, fig.height=3.5, fig.width=5}
+```{r, echo=FALSE, message=FALSE, fig.height=5, fig.width=5, include = FALSE}
 x = read.csv("breast-cancer.csv") %>% 
   mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
   select(-id) %>% 
@@ -74,13 +75,39 @@ x = read.csv("breast-cancer.csv") %>%
 corrplot(cor(x), method = "color", tl.col = "blue", tl.srt = 60, tl.cex = 0.7)
 ```
 
-\begin{center} \textbf{Figure 2}. Correlation plot of after feature selection \end{center}
+![Correlation plot of after feature selection](11var_corr.png){width=80%}
+
+
+The descriptive statistics of the selected features is shown in **Table 1**
+
+```{r descriptive_data_analysis, echo = FALSE, warning=FALSE}
+library(tidyverse)
+library(gtsummary)
+summary.dat <- read.csv("breast-cancer.csv") %>% 
+  mutate(diagnosis = as.numeric(factor(diagnosis)) - 1) %>% 
+  select(-id) %>% 
+  select(diagnosis, radius_mean, texture_mean, smoothness_mean, concavity_mean, symmetry_mean, fractal_dimension_mean, radius_se, texture_se, smoothness_se, concavity_se, symmetry_se)
+
+summary.dat$diagnosis <- as.factor(ifelse(summary.dat$diagnosis == 1, "M", "B"))
+summary.dat %>% 
+  tbl_summary(by = diagnosis, missing_text = "Missing/NA") %>%
+  add_p(pvalue_fun = ~style_pvalue(.x, digits = 2)) %>%
+  add_overall() %>%
+  add_n() %>%
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Subject Type**") %>%
+  modify_footnote(
+    all_stat_cols() ~ "Median (IQR) or Frequency (%)"
+  ) %>%
+  bold_labels() 
+```
+\begin{center} \textbf{Table 1}. Descriptive Statistics of the Selected Features \end{center}
 
 We standardized the data by the `scale()` function in R, take the first 80% of observations as training dataset, and the rest 20% of observations as testing dataset for model comparison.
 
-## Methods
+## 2 Methods
 
-## Logistic Model
+### 2.1 Logistic Model
 
 Take $Y_i$ as the response of $i_{th}$ observation and follows binary distribution $Bin(\pi_i)$. $\pi_i$ is the probability of $i_{th}$ observation being malignant. By applying the logit link: 
 $$g(\mu)=\operatorname{logit}(\mu)=\log \frac{\mu}{1-\mu}$$
@@ -105,7 +132,7 @@ $$
 i = 1, ... n. Hessian matrix is negative definite.
 
 
-## Newton-Raphson Algorithm
+### 2.2 Newton-Raphson Algorithm
 
 Our target is to find the $\boldsymbol{\beta}$ that maximizes the log-likelihood $l (\boldsymbol{\beta})$ of our logistic regression, that is, the solution to the equation $\nabla l (\boldsymbol{\beta})=0$. At the same time, the Hessian matrix $\nabla^{2} l(\boldsymbol{\beta)}$ needs to be negative definite to ensure $\boldsymbol{\beta}$ to be a local maximum rather than a local minimum or a saddle point. As for logistic regression, $$H=-X^{T} \operatorname{diag}\left(\pi_{i}\left(1-\pi_{i}\right)\right) X=-\sum_{i=1}^{p}a_{i}^{2}x_{ii}^{2}\pi _{i}(1-\pi _{i}),$$ for any $\boldsymbol{a}$,  $$\mathbf{a}^{T}H\textbf{a} = -\sum_{i=1}^{p}a_{i}^{2}x_{ii^{}}^{2}\pi _{i}(1-\pi _{i}) <0,$$ thus the Hessian matrix is negative definite and the log-likelihood is concave at any parameter value. In this case, $\nabla l (\boldsymbol{\beta})=0$ guarantees the global maximum.
 
@@ -115,7 +142,7 @@ Normally, we need to check if the Hessian matrix is negative definite. If not, w
 
 The stopping criteria is when the absolute value of difference in consecutive log-likelihood values is less than the tolerance of $10^{-10}$ or iteration times reaches 1000. Since a unique global maximum is guaranteed, variety of initial $\boldsymbol\theta_{0}$ should result in the same final estimation. After testing different inputs, we get the same convergence indeed. The estimations using the training dataset with the selected predictors are shown in the results section. 
 
-## Logitstic LASSO Coordinate Descent Algorithm
+### 2.3 Logitstic LASSO Coordinate Descent Algorithm
 
 Regularization is the common variable selection approaches for high-dimensional covariates. One of the best known Regularization is called LASSO, which is to add $L1$-penalty to the objective function. In this project, we consider a logistic regression, with penalty term, we are aiming to maximize the penalized log likelihood:
 $$\max_{\beta \in \mathbb{R}^{p+1}} \frac{1}{n}\sum_{i=1}^n  \{y_i(X_{i}\beta)-\log(1+\exp(X_{i}\beta))\}-\lambda \sum_{j=0}^p |\beta_j|$$
@@ -170,26 +197,32 @@ The implementation of algorithm can be shown in the **Algorithm 1**.
 	\end{algorithmic} 
 \end{algorithm}
 
+The flowing plot show the variable selection ability of our LASSO algorithm. When the $\lambda \rightarrow \lambda_{\text{max}}$, all the coefficients were forced to $0$.
 
-## 5-Fold Cross Validation
+![Path plot of coordinate descent logistic LASSO](path_plot.png){width=40%}
+
+### 2.4 5-Fold Cross Validation
 In the k-fold cross validation,the original data will be divided K groups (K-Fold), and makes each subset of data into a test set separately, and the rest of the K-1 subset data as the training set, so that K models will be obtained. These K models are evaluated separately in the test set.
 
-![Principle of k-fold CV](cv_principle.png){width=30%}
+![Principle of k-fold CV](cv_principle.png){width=40%}
 
 In order to find the best lambda, we use 5-fold cross validation. The dataset is divided into five subdatasets by using the *crossv_kfold* function. We combined 4 of them as the training data set, and the rest $\frac{1}{5}$ of them as the test data set each time. The optimal coefficients is then found five times by running the logit-LASSO on the training data set, leaving a different subset out each time. The subset left out is then used to estimate the model performance. This is done for all lambdas in the pre-defined sequence in order to search for the lambda with the highest average predictive ability. 
 
 We use AUC as the criteria to choose the best tuning parameter and corresponding model obtained from train data since the response of this data set is binary. We then calculating AUC to evaluate the model performance in test dataset and choose the best lambda whose average AUC is the biggest.
 
-![log.lambda with the Largest AUC](cv_result.png){width=60%}
+![log.lambda with the Largest AUC](cv_result.png){width=80%}
 
 After the 5-fold cross validation, we found that the best lambda is about $e^{-6.236} = 0.00196$ in the optimal model when set.seed(2022) within $e^{-1}$ to $e^{-10}$. 
 
+\newpage
 
-## Results and Discussion
+## 3 Results and Discussion
 
-Table 1 showed model coefficient estimated by `glm` package, Newton-Raphson Method, `caret` package and Newton-Raphson Method with LASSO. Coefficients given by methods with LASSO were generated under the best lambda identified by 5-fold cross-validation. The Newton-Raphson method has given estimation identical to the glm package’s result, while Newton-Raphson Method with LASSO method generated different results compared to coefficients given by the caret package.
+### 3.1 Models Compairson
 
-|  | glm package | Newton-Raphson | Newton-Raphson-LASSO | caret-glmnet |
+Table 2 showed model coefficient estimated by `glm` package, Newton-Raphson Method, `caret` package and coordinate descent logistic LASSO. Coefficients given by methods with LASSO were generated under the best lambda identified by 5-fold cross-validation. The Newton-Raphson method has given estimation identical to the glm package’s result, while coordinate descent logistic LASSO algorithm generated different results compared to coefficients given by the caret package.
+
+|  | glm package | Newton-Raphson | coordinate descent logistic-LASSO | caret-glmnet |
 | :--- | ---: | ---: | ---: | ---: |
 | (Intercept) | 0.0654858 | 0.0654858 | -0.0426412 | -0.1640622 |
 | radius_mean | 2.2932120 | 2.2932120 | 2.8124161 | 2.3027405
@@ -205,25 +238,34 @@ Table 1 showed model coefficient estimated by `glm` package, Newton-Raphson Meth
 | symmetry_se | -0.4841348 | -0.4841348 | -0.4795127 | -0.2628887 |
 
 
-\begin{center} \textbf{Table 1}. Model Coefficient Estimated by Different Methods \end{center}
+\begin{center} \textbf{Table 2}. Model Coefficient Estimated by Different Methods \end{center}
 
 
-Figure 4 and Figure 5 showed comparison among performances of models in terms of 5-fold cross-validated AUC on the training dataset and AUC on the test dataset. For calculating cross-validated AUC, previous folds used in the train process of the logistic LASSO model were used. Compared to the full logistic model, the optimal logistic LASSO model displayed better performance in the cross validation on the train dataset, and showed the same AUC on the test dataset. Therefore, we can conclude that inclusion of LASSO penalty term in the model training process has slightly improved the model. Besides, the model trained by `caret`, although showed the best performance in the cross-validation, has a test AUC slightly smaller than other 2 models.
+Figure 6 and Figure 7 showed comparison among performances of models in terms of 5-fold cross-validated AUC on the training dataset and AUC on the test dataset. For calculating cross-validated AUC, previous folds used in the train process of the logistic LASSO model were used. Compared to the full logistic model, the optimal logistic LASSO model displayed better performance in the cross validation on the train dataset, and showed the same AUC on the test dataset. Therefore, we can conclude that inclusion of LASSO penalty term in the model training process has slightly improved the model. Besides, the model trained by `caret`, although showed the best performance in the cross-validation, has a test AUC slightly smaller than other 2 models.
 
-![](train_auc.png){width=100%}
-
-\begin{center} \textbf{Figure 4}. Model Coefficient Estimated by Different Methods \end{center}
-
+![Model Coefficient Estimated by Different Methods](train_auc.png){width=80%}
 
 $\quad$
 
-![](test_auc.png){width=100%}
+![Model AUCs on the Test Dataset](test_auc.png){width=80%}
 
-\begin{center} \textbf{Figure 5}. Model AUCs on the Test Dataset \end{center}
+### 3.2 Conclusion
+
+Our implementations in Newton-Raphson and coordinate descent logistic LASSO algorithms was success. Both algorithms perform similarly compared with the existed algorithm implemented in the R packages. Furthermore,  
+
+It is clear from our results that having more data does not always correspond to an advantage in diagnosis prediction. We found better prediction with many fewer predictors, six, in our optimal model compared to a full 20 in the model incorporating the most data. Given these results, it may benefit clinicians and practitioners to focus on certain indicators or attributes of breast imaging data in an effort to separate signal from noise.
+
+Lastly, it is to be observed that 6 variables, `texture_mean`, `concave_points_mean`, `radius_worst`, `smoothness_worst`, `concavity_worst`, and `symmetry_worst`, play important roles in predicting whether breast imaging data is malignant.
+
+
+### 3.3 Limitations and Future work
 
 This study has some limitations. At the data preprocessing stage, we removed variables with correlation coefficient larger than 0.7, which only left us 11 variables for modeling. For further study, we could try other criteria for feature selection and keep more information from the original dataset. In addition, we could try some other evaluation metrics in cross validation, like error rate.
 
-## Citations
+There are to main focus on the future works. First is the more careful variable selection. In this project, due to the roughly selection, we failed to use any of the LASSO method to do the variable selection, that may cause some performance decrements in LASSO. Secondly, the final coefficients from our LASSO logistic algorithm and the ones from `glmnet` algorithm are slightly different. Since both of them use the coordinate descent algorithm, further works on math should be done.
+
+
+## 4 Citations
 
 \begin{enumerate}
 \item Friedman, J., Hastie, T., Höfling, H. and Tibshirani, R. (2007). “Pathwise Coordinate Optimization.” The Annals of Applied Statistics. Vol. 1, No. 2, pp. 302-332. 
@@ -238,7 +280,9 @@ This study has some limitations. At the data preprocessing stage, we removed var
 
 \end{enumerate}
 
-## Appendix
+## 5 Appendix
+
+### Data cleaning and EDA
 
 ```{r, results='hide'}
 # data preprocessing
@@ -270,6 +314,8 @@ x_test = x[(n_train + 1):n,]
 x_train_b0 = cbind(rep(1,nrow(x_train)),x_train)
 x_test_b0 = cbind(rep(1,nrow(x_test)), x_test)
 ```
+
+### Newton-Raphson
 
 ```{r, results='hide'}
 # newton raphson
@@ -332,11 +378,12 @@ nr = NewtonRaphson(x_train, y_train, logisticstuff, rep(1,12))
 
 ans = data.frame(nr)
 colnames(ans) = c("iteration", "log likelihood")
-ggplot(ans, aes(x = iteration, y = `log likelihood`)) +
-  geom_point(size = 0.5) +
-  geom_line()
+#ggplot(ans, aes(x = iteration, y = `log likelihood`)) +
+  #geom_point(size = 0.5) +
+  #geom_line()
 ```
 
+### Coordinate descent
 
 ```{r, results='hide'}
 # coordinate lasso
@@ -392,6 +439,8 @@ lassoCD <- function(
     return(res)
 }
 ```
+
+### 5-folds CV
 
 ```{r, warning=FALSE, results='hide'}
 # auc cv
@@ -452,10 +501,10 @@ best.lambda = best.lambdas[length(best.lambdas)]
 
 ind = which(cv.path.lassoCD$log.lambda == best.lambda)
 
-cv.path.lassoCD %>%
-  ggplot(data = ., aes(x = log.lambda, y = fold.auc)) +
-  geom_vline(xintercept = best.lambda) +
-  geom_line(color = "red") 
+#cv.path.lassoCD %>%
+  #ggplot(data = ., aes(x = log.lambda, y = fold.auc)) +
+  #geom_vline(xintercept = best.lambda) +
+  #geom_line(color = "red") 
 
 
 # mean(exp((best.lambda.lassoCD)))
@@ -463,6 +512,8 @@ cv.path.lassoCD %>%
 best.lambda.lassoCD <- exp(best.lambda.lassoCD)
 best.lambda.lassoCD
 ```
+
+### Model compairson
 
 ```{r, results='hide'}
 # caret package
@@ -484,6 +535,8 @@ model.glmn <- train(x = x_train,
 
 model.glmn$bestTune
 ```
+
+### Coefficients compairson
 
 ```{r, results='hide'}
 extract.coef = function(lambdas, x, y, k) {
@@ -516,6 +569,8 @@ extract.coef = function(lambdas, x, y, k) {
 NR.lasso.coef = extract.coef(lambda.seq[1:ind], x_train_b0, y_train, 5)
 ```
 
+### Results summary
+
 ```{r, results='hide'}
 # coeficients
 # newton rapson
@@ -530,11 +585,12 @@ glmn.coef = coef(model.glmn$finalModel, model.glmn$bestTune$lambda) %>% as.matri
 logistics.coef = cbind(glmn.coef, glm.coef, NR.coef, NR.lasso.coef)
 colnames(logistics.coef) = c("caret-glmnet", "glm package", "Newton-Raphson", "Logistic-LASSO")
 
-logistics.coef %>% 
-  select("glm package", "Newton-Raphson", "Logistic-LASSO", "caret-glmnet") %>% 
-  knitr::kable()
+#logistics.coef %>% 
+  #select("glm package", "Newton-Raphson", "Logistic-LASSO", "caret-glmnet") %>% 
+  #knitr::kable()
 ```
 
+### Test performance
 
 ```{r, results='hide'}
 # prediction
@@ -555,25 +611,25 @@ y.pred.glmn = lassoCD.predict(as.matrix(glmn.coef), x_test_b0, y_test)
 roc.log.lasso <- roc(y_test, y.pred.log.lasso)
 roc.log = roc(y_test, y.pred.log)
 roc.glmn = roc(y_test, y.pred.glmn)
-plot(roc.log.lasso, legacy.axes = TRUE, print.auc = TRUE)
-plot(roc.log, legacy.axes = TRUE, print.auc = TRUE)
-plot(roc.glmn, legacy.axes = TRUE, print.auc = TRUE)
+#plot(roc.log.lasso, legacy.axes = TRUE, print.auc = TRUE)
+#plot(roc.log, legacy.axes = TRUE, print.auc = TRUE)
+#plot(roc.glmn, legacy.axes = TRUE, print.auc = TRUE)
 ```
 
 ```{r, warning=FALSE, fig.height=4, fig.width=8, results='hide'}
 auc <- c(roc.log$auc[1], roc.log.lasso$auc[1], roc.glmn$auc[1])
 
-modelNames <- c("Newton-Raphson","Newton-Raphson-LASSO","Caret-glmnet")
+modelNames <- c("Newton-Raphson","coordinate descent logistic-LASSO","Caret-glmnet")
 
-ggroc(list(roc.log, roc.log.lasso, roc.glmn), legacy.axes = TRUE, size = 1, alpha = 0.3) + 
-  scale_color_discrete(labels = paste0(modelNames, " (", round(auc,3),")"),
-                       name = "Models (AUC)") +
-  geom_abline(intercept = 0, slope = 1, color = "grey") +
-  theme_bw() +
-  theme(text = element_text(size = 16))
+#ggroc(list(roc.log, roc.log.lasso, roc.glmn), legacy.axes = TRUE, size = 1, alpha = 0.3) + 
+  #scale_color_discrete(labels = paste0(modelNames, " (", round(auc,3),")"),
+                       #name = "Models (AUC)") +
+  #geom_abline(intercept = 0, slope = 1, color = "grey") +
+  #theme_bw() +
+  #theme(text = element_text(size = 16))
 ```
 
-```{r}
+```{r,results='hide'}
 extract.cv.performance = function(x, y, k, betas) {
   set.seed(2022)
   data = as.data.frame(cbind(x, y))
@@ -601,29 +657,29 @@ extract.cv.performance = function(x, y, k, betas) {
 ```
 
 
-```{r, message=FALSE, warning=FALSE}
+```{r, message=FALSE, warning=FALSE,results='hide'}
 cv.roc.log.lasso = extract.cv.performance(x_train_b0, y_train, k = 5, as.vector(t(NR.lasso.coef)))
 cv.roc.log = extract.cv.performance(x_train_b0, y_train, k = 5, as.vector(t(NR.coef)))
 cv.roc.glmn = extract.cv.performance(x_train_b0, y_train, k = 5, as.vector(t(glmn.coef)))
 ```
 
 
-```{r, fig.width=8, fig.height=4}
+```{r, fig.width=8, fig.height=4,results='hide'}
 df = tibble(
   AUC = c(cv.roc.log, cv.roc.log.lasso, cv.roc.glmn),
   model = c(rep("Newton Raphson", 5), rep("Logistic-LASSO", 5), rep("caret-glmnet",5))
 )
 
 library(wesanderson)
-df %>% 
-  ggplot(aes(fill = model)) +
-  geom_boxplot(aes(x = AUC, y = model)) +
-  scale_fill_manual(values=wes_palettes$GrandBudapest1[c(1, 2, 4)]) +
-  theme_bw() +
-  theme(text = element_text(size = 14))
+#df %>% 
+  #ggplot(aes(fill = model)) +
+  #geom_boxplot(aes(x = AUC, y = model)) +
+  #scale_fill_manual(values=wes_palettes$GrandBudapest1[c(1, 2, 4)]) +
+  #theme_bw() +
+  #theme(text = element_text(size = 14))
 ```
 
-```{r}
+```{r, results='hide'}
 path <- function(X, y, lambdaseq){
     init_beta <- rep(1, dim(X)[2])
     betas <- NULL
@@ -648,6 +704,9 @@ path.plot <- path.out %>%
   ylab("Estimate") +
   theme(legend.position = "bottom", 
         legend.text = element_text(size = 6))
-path.plot + theme_bw()
+#path.plot + theme_bw()
 ```
 
+## 6 Contributions
+
+Everyone in our group contributes equally to our final success in this project. Anyu worked on implementing data cleaning procedures and EDA of the dataset. Jibei worked on developing and implementing the Newton-Raphson optimization algorithm. Renjie worked on developing and implementing the logistic LASSO coordinate descent algorithm. Yijing worked on the development of the 5-folds cross validation procedure. Haolin put all of our works and results together to reach the final conclusion.
